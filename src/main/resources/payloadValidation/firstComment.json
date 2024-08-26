@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "commentTreeData": {
+      "type": "object",
+      "properties": {
+        "entityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entityType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "workflow": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": ["entityId", "entityType", "workflow"],
+      "additionalProperties": false
+    },
+    "commentData": {
+      "type": "object",
+      "properties": {
+        "comment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "commentSource": {
+          "type": "object",
+          "properties": {
+            "userId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "userPic": {
+              "type": "string",
+              "minLength": 1
+            },
+            "userName": {
+              "type": "string"
+            },
+            "userRole": {
+              "type": "string"
+            }
+          },
+          "required": ["userId", "userPic", "userRole"],
+          "additionalProperties": false
+        }
+      },
+      "required": ["comment", "commentSource"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["commentTreeData", "commentData"],
+  "additionalProperties": false
+}
