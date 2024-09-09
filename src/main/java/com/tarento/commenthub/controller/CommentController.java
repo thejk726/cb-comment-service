@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/v1/comment")
+@RequestMapping("/comment")
 @Slf4j
 public class CommentController {
 
@@ -34,22 +34,22 @@ public class CommentController {
   @Autowired
   private CommentService commentService;
 
-  @PostMapping("/addFirst")
+  @PostMapping("/v1/addFirst")
   public ResponseDTO addFirstComment(@RequestBody JsonNode payload) {
     return commentService.addFirstCommentToCreateTree(payload);
   }
 
-  @PostMapping("/addNew")
+  @PostMapping("/v1/addNew")
   public ResponseDTO addNewComment(@RequestBody JsonNode payload) {
     return commentService.addNewCommentToTree(payload);
   }
 
-  @PutMapping("/update")
+  @PutMapping("/v1/update")
   public ResponseDTO updateExistingComment(@RequestBody JsonNode payload) {
     return commentService.updateExistingComment(payload);
   }
 
-  @GetMapping("/getAll")
+  @GetMapping("/v1/getAll")
   public CommentsResoponseDTO getComments(
       @RequestParam(name = "entityType") String entityType,
       @RequestParam(name = "entityId") String entityId,
@@ -63,7 +63,7 @@ public class CommentController {
     return commentService.getComments(commentTreeIdentifierDTO);
   }
 
-  @GetMapping("/multipleWorkflows")
+  @GetMapping("/v1/multipleWorkflows")
   public List<MultipleWorkflowsCommentResponseDTO> getCommentsForMultipleWorkflows(
       @RequestParam(name = "entityType") String entityType,
       @RequestParam(name = "entityId") String entityId,
@@ -71,7 +71,7 @@ public class CommentController {
     return commentService.getComments(entityType, entityId, workflows);
   }
 
-  @DeleteMapping("/delete/{commentId}")
+  @DeleteMapping("/v1/delete/{commentId}")
   public Comment deleteComment(
       @PathVariable String commentId,
       @RequestParam(name = "entityType") String entityType,
@@ -86,7 +86,7 @@ public class CommentController {
     return commentService.deleteCommentById(commentId, commentTreeIdentifierDTO);
   }
 
-  @PostMapping("/setStatusToResolved")
+  @PostMapping("/v1/setStatusToResolved")
   public CommentTree setCommentTreeStatusToResolved(
       @RequestParam(name = "entityType") String entityType,
       @RequestParam(name = "entityId") String entityId,
@@ -99,7 +99,7 @@ public class CommentController {
     return commentTreeService.setCommentTreeStatusToResolved(commentTreeIdentifierDTO);
   }
 
-  @PostMapping("/{commentId}/resolve")
+  @PostMapping("/v1/resolve/{commentId}")
   public Comment resolveComment(@PathVariable String commentId) {
     return commentService.resolveComment(commentId);
   }
