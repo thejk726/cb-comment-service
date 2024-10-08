@@ -1,4 +1,4 @@
-package com.igot.cb.transactional.cassandrautils;
+package com.tarento.commenthub.transactional.cassandrautils;
 
 import com.igot.cb.transactional.exceptions.CassandraPropertyReaderException;
 

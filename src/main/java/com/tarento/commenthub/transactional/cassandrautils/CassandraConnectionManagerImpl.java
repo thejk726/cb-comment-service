@@ -1,10 +1,10 @@
-package com.igot.cb.transactional.cassandrautils;
+package com.tarento.commenthub.transactional.cassandrautils;
 
 import com.datastax.driver.core.*;
 import com.datastax.driver.core.policies.DefaultRetryPolicy;
-import com.igot.cb.pores.exceptions.CustomException;
-import com.igot.cb.pores.util.Constants;
-import com.igot.cb.pores.util.PropertiesCache;
+import com.tarento.commenthub.transactional.exceptions.CustomException;
+import com.tarento.commenthub.constant.Constants;
+import com.tarento.commenthub.transactional.utils.PropertiesCache;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
