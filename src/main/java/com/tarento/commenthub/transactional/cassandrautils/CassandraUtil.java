@@ -1,9 +1,9 @@
-package com.igot.cb.transactional.cassandrautils;
+package com.tarento.commenthub.transactional.cassandrautils;
 
 import com.datastax.driver.core.ColumnDefinitions;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
-import com.igot.cb.pores.util.Constants;
+import com.tarento.commenthub.constant.Constants;
 
 
 import java.util.*;

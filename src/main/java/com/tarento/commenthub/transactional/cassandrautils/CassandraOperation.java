@@ -1,4 +1,4 @@
-package com.igot.cb.transactional.cassandrautils;
+package com.tarento.commenthub.transactional.cassandrautils;
 
 import java.util.List;
 import java.util.Map;

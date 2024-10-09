@@ -1,4 +1,4 @@
-package com.igot.cb.transactional.cassandrautils;
+package com.tarento.commenthub.transactional.cassandrautils;
 
 import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.PreparedStatement;
@@ -8,8 +8,8 @@ import com.datastax.driver.core.querybuilder.QueryBuilder;
 import com.datastax.driver.core.querybuilder.Select;
 import com.datastax.driver.core.querybuilder.Select.Builder;
 import com.datastax.driver.core.querybuilder.Select.Where;
-import com.igot.cb.pores.util.Constants;
-import com.igot.cb.pores.util.ApiResponse;
+import com.tarento.commenthub.constant.Constants;
+import com.tarento.commenthub.transactional.utils.ApiResponse;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -17,8 +17,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.collections.MapUtils;
+import org.apache.commons.collections4.CollectionUtils;
+import org.apache.commons.collections4.MapUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
