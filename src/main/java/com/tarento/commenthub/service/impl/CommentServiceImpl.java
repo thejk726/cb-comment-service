@@ -3,6 +3,8 @@ package com.tarento.commenthub.service.impl;
 import static com.tarento.commenthub.constant.Constants.COMMENT_KEY;
 import static com.tarento.commenthub.utility.CommentsUtility.containsNull;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -21,16 +23,23 @@ import com.tarento.commenthub.exception.CommentException;
 import com.tarento.commenthub.repository.CommentRepository;
 import com.tarento.commenthub.service.CommentService;
 import com.tarento.commenthub.service.CommentTreeService;
+import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
 import com.tarento.commenthub.utility.Status;
 import java.io.InputStream;
 import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.MapUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -55,6 +64,12 @@ public class CommentServiceImpl implements CommentService {
 
   @Value("${redis.ttl}")
   private long redisTtl;
+
+  @Autowired
+  private CassandraOperation cassandraOperation;
+
+  @Autowired
+  private ObjectMapper mapper;
 
   @Override
   public ResponseDTO addFirstCommentToCreateTree(JsonNode payload) {
@@ -133,17 +148,59 @@ public class CommentServiceImpl implements CommentService {
       // Fetch from db and add fetched comments into redis
       comments = commentRepository.findByCommentIdInAndStatus(childNodeList,
           Status.ACTIVE.name().toLowerCase());
-      comments.stream().
-          forEach(comment ->
-              redisTemplate.opsForValue()
-                  .set(COMMENT_KEY + comment.getCommentId(), comment, redisTtl, TimeUnit.SECONDS));
+      List<Map<String, Object>> userList = new ArrayList<>();
+      comments.stream().forEach(comment -> {
+        // Redis operation
+        redisTemplate.opsForValue()
+            .set(COMMENT_KEY + comment.getCommentId(), comment, redisTtl, TimeUnit.SECONDS);
+
+        // Create a property map for each comment with the respective commentId
+        Map<String, Object> propertyMap = new HashMap<>();
+        propertyMap.put(Constants.ID, comment.getCommentData().get(Constants.COMMENT_SOURCE)
+            .get(Constants.USER_ID).asText());  // Use the commentId from each comment
+
+        // Fetch user information based on the commentId
+        List<Map<String, Object>> userInfoList = cassandraOperation.getRecordsByPropertiesWithoutFiltering(
+            Constants.KEYSPACE_SUNBIRD, Constants.TABLE_USER, propertyMap,
+            Arrays.asList(Constants.PROFILE_DETAILS, Constants.FIRST_NAME), null);
+        userInfoList.get(0);
+
+        Map<String, Object> userMap = new HashMap<>();
+//        userMap.put(Constants.COMMENT_ID, comment.getCommentId());
+        userMap.put(Constants.USER_ID, comment.getCommentData().get(Constants.COMMENT_SOURCE)
+            .get(Constants.USER_ID).asText());
+        userMap.put(Constants.USER_NAME, userInfoList.get(0).get(Constants.FIRST_NAME));
+        String profileDetails = (String) userInfoList.get(0).get(Constants.PROFILE_DETAILS);
+        if (StringUtils.isNotEmpty(profileDetails)) {
+          try {
+            Map<String, Object> profileDetailsMap = null;
+            String profileImageUrl = "";
+            profileDetailsMap = mapper.readValue(profileDetails,
+                new TypeReference<HashMap<String, Object>>() {
+                });
+            if (MapUtils.isNotEmpty(profileDetailsMap) && profileDetailsMap.containsKey(
+                Constants.PROFILE_IMG) && StringUtils.isNotEmpty(
+                (String) profileDetailsMap.get(Constants.PROFILE_IMG))) {
+              profileImageUrl = (String) profileDetailsMap.get(Constants.PROFILE_IMG);
+              userMap.put(Constants.PROFILE_IMG, profileImageUrl);
+            }
+          } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+          }
+        }
+
+        userList.add(userMap);
+      });
+
+      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO();
+      commentsResoponseDTO.setComments(comments);
+      commentsResoponseDTO.setUsers(userList);
+      commentsResoponseDTO.setCommentTree(commentTree);
+      Optional.ofNullable(comments)
+          .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
+      return commentsResoponseDTO;
     }
-    CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO();
-    commentsResoponseDTO.setComments(comments);
-    commentsResoponseDTO.setCommentTree(commentTree);
-    Optional.ofNullable(comments)
-        .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
-    return commentsResoponseDTO;
+    return null;
   }
 
   @Override

@@ -2,6 +2,7 @@ package com.tarento.commenthub.constant;
 
 public class Constants {
 
+
   private Constants() {
 
   }
@@ -78,6 +79,13 @@ public class Constants {
   public static final String SUCCESS = "success";
   public static final String FAILED = "Failed";
   public static final String ERROR_MESSAGE = "errmsg";
+  public static final String ID = "id";
+  public static final String USER_ID = "userId";
+  public static final String TABLE_USER = "user";
+  public static final String FIRST_NAME = "firstname";
+  public static final String PROFILE_DETAILS = "profiledetails";
+  public static final String USER_NAME = "userName";
+  public static final String PROFILE_IMG = "profileImageUrl";
 
 
 }

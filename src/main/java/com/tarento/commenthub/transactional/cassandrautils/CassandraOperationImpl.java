@@ -12,6 +12,7 @@ import com.tarento.commenthub.constant.Constants;
 import com.tarento.commenthub.transactional.utils.ApiResponse;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -112,4 +113,64 @@ public class CassandraOperationImpl implements CassandraOperation {
         }
         return response;
     }
+
+    public List<Map<String, Object>> getRecordsByPropertiesWithoutFiltering(String keyspaceName,
+        String tableName,
+        Map<String, Object> propertyMap, List<String> fields) {
+        return getRecordsByPropertiesWithoutFiltering(keyspaceName, tableName, propertyMap, fields,
+            null);
+    }
+
+    @Override
+    public List<Map<String, Object>> getRecordsByPropertiesWithoutFiltering(String keyspaceName,
+        String tableName, Map<String, Object> propertyMap, List<String> fields, Integer limit) {
+        Select selectQuery = null;
+        List<Map<String, Object>> response = new ArrayList<>();
+        try {
+            selectQuery = processQueryWithoutFiltering(keyspaceName, tableName, propertyMap,
+                fields);
+            if (limit != null) {
+                selectQuery = selectQuery.limit(limit);
+            }
+            ResultSet results = connectionManager.getSession(keyspaceName).execute(selectQuery);
+            response = CassandraUtil.createResponse(results);
+
+        } catch (Exception e) {
+            logger.error(Constants.EXCEPTION_MSG_FETCH + tableName + " : " + e.getMessage(), e);
+        }
+        return response;
+    }
+
+    private Select processQueryWithoutFiltering(String keyspaceName, String tableName,
+        Map<String, Object> propertyMap,
+        List<String> fields) {
+        Select selectQuery = null;
+        Builder selectBuilder;
+        if (CollectionUtils.isNotEmpty(fields)) {
+            String[] dbFields = fields.toArray(new String[fields.size()]);
+            selectBuilder = QueryBuilder.select(dbFields);
+        } else {
+            selectBuilder = QueryBuilder.select().all();
+        }
+        selectQuery = selectBuilder.from(keyspaceName, tableName);
+        if (MapUtils.isNotEmpty(propertyMap)) {
+            Where selectWhere = selectQuery.where();
+            for (Entry<String, Object> entry : propertyMap.entrySet()) {
+                if (entry.getValue() instanceof List) {
+                    List<Object> list = (List) entry.getValue();
+                    if (null != list) {
+                        Object[] propertyValues = list.toArray(new Object[list.size()]);
+                        Clause clause = QueryBuilder.in(entry.getKey(), propertyValues);
+                        selectWhere.and(clause);
+                    }
+                } else {
+                    Clause clause = QueryBuilder.eq(entry.getKey(), entry.getValue());
+                    selectWhere.and(clause);
+                }
+            }
+        }
+        return selectQuery;
+    }
+
+
 }
