@@ -6,8 +6,10 @@ import com.tarento.commenthub.dto.MultipleWorkflowsCommentResponseDTO;
 import com.tarento.commenthub.dto.CommentsResoponseDTO;
 import com.tarento.commenthub.dto.ResponseDTO;
 import com.tarento.commenthub.entity.Comment;
+import com.tarento.commenthub.transactional.utils.ApiResponse;
 import io.swagger.v3.core.util.Json;
 import java.util.List;
+import java.util.Map;
 
 public interface CommentService {
 
@@ -26,4 +28,7 @@ public interface CommentService {
 
   Comment resolveComment(String commentId);
 
+  ApiResponse likeComment(Map<String, Object> likePayload);
+
+  ApiResponse getCommentLike(String commentId, String userId);
 }

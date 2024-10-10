@@ -33,4 +33,19 @@ public interface CassandraOperation {
      * @return An object representing the result of the insertion operation.
      */
     public Object insertRecord(String keyspaceName, String tableName, Map<String, Object> request);
+
+    public List<Map<String, Object>> getRecordsByPropertiesWithoutFiltering(String keyspaceName, String tableName,
+        Map<String, Object> propertyMap, List<String> fields, Integer limit);
+
+    /**
+     * Method to update the record on basis of composite primary key.
+     *
+     * @param keyspaceName     Keyspace name
+     * @param tableName        Table name
+     * @param updateAttributes Column map to be used in set clause of update query
+     * @param compositeKey     Column map for composite primary key
+     * @return Response consisting of update query status
+     */
+    Map<String, Object> updateRecordByCompositeKey(String keyspaceName, String tableName, Map<String, Object> updateAttributes,
+        Map<String, Object> compositeKey);
 }
