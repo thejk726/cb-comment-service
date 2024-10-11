@@ -24,11 +24,14 @@ import com.tarento.commenthub.repository.CommentRepository;
 import com.tarento.commenthub.service.CommentService;
 import com.tarento.commenthub.service.CommentTreeService;
 import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
+import com.tarento.commenthub.transactional.utils.ApiResponse;
+import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
 import com.tarento.commenthub.utility.Status;
 import java.io.InputStream;
 import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -67,9 +70,6 @@ public class CommentServiceImpl implements CommentService {
 
   @Autowired
   private CassandraOperation cassandraOperation;
-
-  @Autowired
-  private ObjectMapper mapper;
 
   @Override
   public ResponseDTO addFirstCommentToCreateTree(JsonNode payload) {
@@ -175,7 +175,7 @@ public class CommentServiceImpl implements CommentService {
           try {
             Map<String, Object> profileDetailsMap = null;
             String profileImageUrl = "";
-            profileDetailsMap = mapper.readValue(profileDetails,
+            profileDetailsMap = objectMapper.readValue(profileDetails,
                 new TypeReference<HashMap<String, Object>>() {
                 });
             if (MapUtils.isNotEmpty(profileDetailsMap) && profileDetailsMap.containsKey(
@@ -325,6 +325,155 @@ public class CommentServiceImpl implements CommentService {
         .set(COMMENT_KEY + commentId, comment, redisTtl,
             TimeUnit.SECONDS);
     return comment;
+  }
+
+  @Override
+  public ApiResponse likeComment(Map<String, Object> likePayload) {
+    ApiResponse response = new ApiResponse();
+    response.setResponseCode(HttpStatus.OK);
+    String error = validateLikeCommentPayload(likePayload);
+    if (StringUtils.isNotBlank(error)) {
+      response.setResponseCode(HttpStatus.BAD_REQUEST);
+      response.getParams().setErr(error);
+      return response;
+    }
+    Optional<Comment> optComment = commentRepository.findById(
+        (String) likePayload.get(Constants.COMMENT_ID));
+    if (!optComment.isPresent()) {
+      response.setResponseCode(HttpStatus.BAD_REQUEST);
+      response.getParams().setErr(error);
+      return response;
+    }
+    JsonNode commentData = optComment.get().getCommentData();
+    try {
+      String commentId = (String) likePayload.get(Constants.COMMENT_ID);
+      String userId = (String) likePayload.get(Constants.USERID);
+      Map<String, Object> propertyMap = new HashMap<>();
+      propertyMap.put(Constants.COMMENT_ID, commentId);
+      propertyMap.put(Constants.USERID, userId);
+      List<Map<String, Object>> records = cassandraOperation.getRecordsByPropertiesWithoutFiltering(
+          Constants.KEYSPACE_SUNBIRD, "comment_likes", propertyMap,
+          Collections.singletonList("flag"), null);
+      if (!records.isEmpty()) {
+        String record = (String) records.get(0).get(Constants.FLAG);
+        if (record.equals(likePayload.get(Constants.FLAG))) {
+          response.setResponseCode(HttpStatus.BAD_REQUEST);
+          response.getParams()
+              .setErr("Already given " + likePayload.get(Constants.FLAG) + " for this comment");
+          return response;
+        }
+        Map<String, Object> map = new HashMap<>();
+        map.put(Constants.FLAG, likePayload.get(Constants.FLAG));
+        Map<String, Object> compositeKey = new HashMap<>();
+        compositeKey.put(Constants.COMMENT_ID, commentId);
+        compositeKey.put(Constants.USERID, userId);
+        cassandraOperation.updateRecordByCompositeKey(Constants.KEYSPACE_SUNBIRD, "comment_likes",
+            map, compositeKey);
+        if (commentData.has((String) likePayload.get(Constants.FLAG))) {
+          Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG)).asLong();
+          ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG),
+              incrementCount + 1);
+        } else {
+          ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG), 1);
+        }
+        if (commentData.has(record)) {
+          Long decrementCount = commentData.get(record).asLong();
+          ((ObjectNode) commentData).put(record, decrementCount - 1);
+        }
+        Comment commentToBeUpdated = optComment.get();
+        commentToBeUpdated.setCommentData(commentData);
+        Comment updatedComment = commentRepository.save(commentToBeUpdated);
+        redisTemplate.opsForValue()
+            .set(COMMENT_KEY + commentToBeUpdated.getCommentId(), updatedComment, redisTtl,
+                TimeUnit.SECONDS);
+      } else {
+        propertyMap.put(Constants.FLAG, likePayload.get(Constants.FLAG));
+        cassandraOperation.insertRecord(Constants.KEYSPACE_SUNBIRD, "comment_likes", propertyMap);
+        if (commentData.has((String) likePayload.get(Constants.FLAG))) {
+          Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG)).asLong();
+          ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG),
+              incrementCount + 1);
+        } else {
+          ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG), 1);
+        }
+        Comment commentToBeUpdated = optComment.get();
+        commentToBeUpdated.setCommentData(commentData);
+        Comment updatedComment = commentRepository.save(commentToBeUpdated);
+        redisTemplate.opsForValue()
+            .set(COMMENT_KEY + commentToBeUpdated.getCommentId(), updatedComment, redisTtl,
+                TimeUnit.SECONDS);
+      }
+    } catch (Exception e) {
+      response.setResponseCode(HttpStatus.INTERNAL_SERVER_ERROR);
+      response.getParams().setErr(e.getMessage());
+      log.error(e.getMessage());
+    }
+    return response;
+  }
+
+  @Override
+  public ApiResponse getCommentLike(String commentId, String userId) {
+    ApiResponse response = new ApiResponse();
+    response.setResponseCode(HttpStatus.OK);
+    String error = validatePayloadForCommAndUser(commentId, userId);
+    if (StringUtils.isNotBlank(error)) {
+      response.setResponseCode(HttpStatus.BAD_REQUEST);
+      response.getParams().setErr(error);
+      return response;
+    }
+
+    Map<String, Object> propertyMap = new HashMap<>();
+    propertyMap.put(Constants.COMMENT_ID, commentId);
+    propertyMap.put(Constants.USERID, userId);
+    List<Map<String, Object>> records = cassandraOperation.getRecordsByPropertiesWithoutFiltering(
+        Constants.KEYSPACE_SUNBIRD, "comment_likes", propertyMap,
+        Collections.singletonList("flag"), null);
+    if (!records.isEmpty()) {
+      response.setResult(records.get(0));
+      return response;
+    } else {
+      response.getParams().setErr("This user not liked this comment");
+      return response;
+    }
+  }
+
+  private String validatePayloadForCommAndUser(String commentId, String userId) {
+    StringBuffer str = new StringBuffer();
+    List<String> errList = new ArrayList<>();
+
+    if (StringUtils.isBlank(commentId)) {
+      errList.add(Constants.COMMENT_ID);
+    }
+    if (StringUtils.isBlank(userId)) {
+      errList.add(Constants.USERID);
+    }
+    if (!errList.isEmpty()) {
+      str.append("Failed Due To Missing Params - ").append(errList).append(".");
+    }
+    return str.toString();
+  }
+
+  private String validateLikeCommentPayload(Map<String, Object> likePayload) {
+    StringBuffer str = new StringBuffer();
+    List<String> errList = new ArrayList<>();
+
+    if (StringUtils.isBlank((String) likePayload.get(Constants.COMMENT_ID))) {
+      errList.add(Constants.COMMENT_ID);
+    }
+    if (StringUtils.isBlank((String) likePayload.get(Constants.USERID))) {
+      errList.add(Constants.USERID);
+    }
+    String voteType = (String) likePayload.get(Constants.FLAG);
+    if (StringUtils.isBlank(voteType)) {
+      errList.add(Constants.FLAG);
+    } else if (!Constants.LIKE.equalsIgnoreCase(voteType) && !Constants.DISLIKE.equalsIgnoreCase(
+        voteType)) {
+      errList.add("fla must be either 'like' or 'dislike'");
+    }
+    if (!errList.isEmpty()) {
+      str.append("Failed Due To Missing Params - ").append(errList).append(".");
+    }
+    return str.toString();
   }
 
 }

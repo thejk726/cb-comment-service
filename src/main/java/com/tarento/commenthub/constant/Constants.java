@@ -79,6 +79,11 @@ public class Constants {
   public static final String SUCCESS = "success";
   public static final String FAILED = "Failed";
   public static final String ERROR_MESSAGE = "errmsg";
+  public static final String USERID = "userId";
+  public static final String FLAG = "flag";
+  public static final String LIKE = "like";
+  public static final String DISLIKE = "dislike";
+  public static final String DATA = "data";
   public static final String ID = "id";
   public static final String USER_ID = "userId";
   public static final String TABLE_USER = "user";
