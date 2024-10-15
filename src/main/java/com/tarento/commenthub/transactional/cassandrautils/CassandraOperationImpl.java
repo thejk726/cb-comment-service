@@ -21,7 +21,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 
-
 /**
  * @author Mahesh RV
  * @author Ruksana
@@ -185,4 +184,10 @@ public class CassandraOperationImpl implements CassandraOperation {
         }
         return response;
     }
+  public List<Map<String, Object>> getRecordsByPropertiesWithoutFiltering(String keyspaceName,
+      String tableName,
+      Map<String, Object> propertyMap, List<String> fields) {
+    return getRecordsByPropertiesWithoutFiltering(keyspaceName, tableName, propertyMap, fields,
+        null);
+  }
 }
