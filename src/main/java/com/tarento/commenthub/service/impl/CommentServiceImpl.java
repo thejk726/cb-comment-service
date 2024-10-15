@@ -3,6 +3,8 @@ package com.tarento.commenthub.service.impl;
 import static com.tarento.commenthub.constant.Constants.COMMENT_KEY;
 import static com.tarento.commenthub.utility.CommentsUtility.containsNull;
 
+import com.auth0.jwt.JWT;
+import com.auth0.jwt.algorithms.Algorithm;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -17,10 +19,12 @@ import com.tarento.commenthub.dto.CommentTreeIdentifierDTO;
 import com.tarento.commenthub.dto.MultipleWorkflowsCommentResponseDTO;
 import com.tarento.commenthub.dto.CommentsResoponseDTO;
 import com.tarento.commenthub.dto.ResponseDTO;
+import com.tarento.commenthub.dto.SearchCriteria;
 import com.tarento.commenthub.entity.Comment;
 import com.tarento.commenthub.entity.CommentTree;
 import com.tarento.commenthub.exception.CommentException;
 import com.tarento.commenthub.repository.CommentRepository;
+import com.tarento.commenthub.repository.CommentTreeRepository;
 import com.tarento.commenthub.service.CommentService;
 import com.tarento.commenthub.service.CommentTreeService;
 import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
@@ -45,6 +49,9 @@ import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -70,6 +77,12 @@ public class CommentServiceImpl implements CommentService {
 
   @Autowired
   private CassandraOperation cassandraOperation;
+
+  @Value("${jwt.secret.key}")
+  private String jwtSecretKey;
+
+  @Autowired
+  private CommentTreeRepository commentTreeRepository;
 
   @Override
   public ResponseDTO addFirstCommentToCreateTree(JsonNode payload) {
@@ -437,6 +450,122 @@ public class CommentServiceImpl implements CommentService {
     }
   }
 
+  @Override
+  public ApiResponse paginatedComment(SearchCriteria searchCriteria) {
+    String error = validateSearchPayload(searchCriteria);
+    ApiResponse response = new ApiResponse();
+    response.setResponseCode(HttpStatus.OK);
+    int defaultLimit = 20; // Default limit to 20 records
+    int defaultOffset = 0;
+    if (StringUtils.isNotBlank(error)) {
+      response.setResponseCode(HttpStatus.BAD_REQUEST);
+      response.getParams().setErr(error);
+      return response;
+    }
+    String commentTreeId = "";
+    if (searchCriteria.getCommentTreeId().isEmpty()) {
+      CommentTreeIdentifierDTO commentTreeIdentifierDTO = new CommentTreeIdentifierDTO();
+      commentTreeIdentifierDTO.setEntityType(searchCriteria.getEntityType());
+      commentTreeIdentifierDTO.setEntityId(searchCriteria.getEntityId());
+      commentTreeIdentifierDTO.setWorkflow(searchCriteria.getWorkflow());
+      commentTreeId = generateJwtTokenKey(commentTreeIdentifierDTO);
+    } else {
+      commentTreeId = searchCriteria.getCommentTreeId();
+    }
+    Optional<CommentTree> commentTree = commentTreeRepository.findById(commentTreeId);
+    if (!commentTree.isPresent()) {
+      response.setResponseCode(HttpStatus.NOT_FOUND);
+      response.getParams().setErr("CommentTree Not found");
+      return response;
+    }
+    JsonNode childNodes = commentTree.get().getCommentTreeData().get(Constants.CHILD_NODES);
+    List<String> childNodeList = objectMapper.convertValue(childNodes, List.class);
+    log.info("CommentServiceImpl::getComments::fetch comments from redis");
+//    List<Comment> comments = redisTemplate.opsForValue().multiGet(getKeys(childNodeList));
+    List<Comment> comments = null;
+    if (containsNull(comments)) {
+      log.info("CommentServiceImpl::getComments::fetch Comments from postgres");
+      int limit = (searchCriteria.getLimit() != null) ? searchCriteria.getLimit() : defaultLimit;
+      int offset =
+          (searchCriteria.getOffset() != null) ? searchCriteria.getOffset() : defaultOffset;
+
+      Pageable pageable = PageRequest.of(offset, limit,
+          Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
+      comments = commentRepository.findByCommentIdIn(childNodeList, pageable).getContent();
+      // Fetch from db and add fetched comments into redis
+//      comments = commentRepository.findByCommentIdInAndStatus(childNodeList,
+//          Status.ACTIVE.name().toLowerCase());
+      List<Map<String, Object>> userList = new ArrayList<>();
+      comments.stream().forEach(comment -> {
+        // Redis operation
+//        redisTemplate.opsForValue()
+//            .set(COMMENT_KEY + comment.getCommentId(), comment, redisTtl, TimeUnit.SECONDS);
+
+        // Create a property map for each comment with the respective commentId
+        Map<String, Object> propertyMap = new HashMap<>();
+        propertyMap.put(Constants.ID, comment.getCommentData().get(Constants.COMMENT_SOURCE)
+            .get(Constants.USER_ID).asText());  // Use the commentId from each comment
+
+        // Fetch user information based on the commentId
+        List<Map<String, Object>> userInfoList = cassandraOperation.getRecordsByPropertiesWithoutFiltering(
+            Constants.KEYSPACE_SUNBIRD, Constants.TABLE_USER, propertyMap,
+            Arrays.asList(Constants.PROFILE_DETAILS, Constants.FIRST_NAME), null);
+
+        Map<String, Object> userMap = new HashMap<>();
+//        userMap.put(Constants.COMMENT_ID, comment.getCommentId());
+        userMap.put(Constants.USER_ID, comment.getCommentData().get(Constants.COMMENT_SOURCE)
+            .get(Constants.USER_ID).asText());
+        userMap.put(Constants.USER_NAME, userInfoList.get(0).get(Constants.FIRST_NAME));
+        String profileDetails = (String) userInfoList.get(0).get(Constants.PROFILE_DETAILS);
+        if (StringUtils.isNotEmpty(profileDetails)) {
+          try {
+            Map<String, Object> profileDetailsMap = null;
+            String profileImageUrl = "";
+            profileDetailsMap = objectMapper.readValue(profileDetails,
+                new TypeReference<HashMap<String, Object>>() {
+                });
+            if (MapUtils.isNotEmpty(profileDetailsMap) && profileDetailsMap.containsKey(
+                Constants.PROFILE_IMG) && StringUtils.isNotEmpty(
+                (String) profileDetailsMap.get(Constants.PROFILE_IMG))) {
+              profileImageUrl = (String) profileDetailsMap.get(Constants.PROFILE_IMG);
+              userMap.put(Constants.PROFILE_IMG, profileImageUrl);
+            }
+          } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+          }
+        }
+
+        userList.add(userMap);
+      });
+
+      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO();
+      commentsResoponseDTO.setComments(comments);
+      commentsResoponseDTO.setUsers(userList);
+      commentsResoponseDTO.setCommentTree(commentTree.get());
+      Optional.ofNullable(comments)
+          .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
+      Map<String, Object> resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
+
+      response.setResult(resultMap);
+      return response;
+    }
+    return null;
+  }
+
+  private String validateSearchPayload(SearchCriteria searchCriteria) {
+    StringBuffer str = new StringBuffer();
+    List<String> errList = new ArrayList<>();
+
+    if (StringUtils.isBlank(searchCriteria.getCommentTreeId())) {
+      if(searchCriteria.getEntityType().isEmpty() && searchCriteria.getEntityType().isEmpty() && searchCriteria.getWorkflow().isEmpty())
+      errList.add(Constants.COMMENT_TREE_ID);
+    }
+    if (!errList.isEmpty()) {
+      str.append("Failed Due To Missing Params - ").append(errList).append(".");
+    }
+    return str.toString();
+  }
+
   private String validatePayloadForCommAndUser(String commentId, String userId) {
     StringBuffer str = new StringBuffer();
     List<String> errList = new ArrayList<>();
@@ -474,6 +603,27 @@ public class CommentServiceImpl implements CommentService {
       str.append("Failed Due To Missing Params - ").append(errList).append(".");
     }
     return str.toString();
+  }
+
+  public String generateJwtTokenKey(CommentTreeIdentifierDTO commentTreeIdentifierDTO) {
+    log.info("generating JwtTokenKey");
+
+    if (StringUtils.isAnyBlank(
+        commentTreeIdentifierDTO.getEntityId(),
+        commentTreeIdentifierDTO.getEntityType(),
+        commentTreeIdentifierDTO.getWorkflow())) {
+      throw new CommentException(Constants.ERROR,
+          "Please provide values for 'entityType', 'entityId', and 'workflow' as all of these fields are mandatory.");
+    }
+
+    String jwtToken = JWT.create()
+        .withClaim(Constants.ENTITY_ID, commentTreeIdentifierDTO.getEntityId())
+        .withClaim(Constants.ENTITY_TYPE, commentTreeIdentifierDTO.getEntityType())
+        .withClaim(Constants.WORKFLOW, commentTreeIdentifierDTO.getWorkflow())
+        .sign(Algorithm.HMAC256(jwtSecretKey));
+
+    log.info("commentTreeId: {}", jwtToken);
+    return jwtToken;
   }
 
 }

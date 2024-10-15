@@ -5,6 +5,7 @@ import com.tarento.commenthub.dto.CommentTreeIdentifierDTO;
 import com.tarento.commenthub.dto.MultipleWorkflowsCommentResponseDTO;
 import com.tarento.commenthub.dto.CommentsResoponseDTO;
 import com.tarento.commenthub.dto.ResponseDTO;
+import com.tarento.commenthub.dto.SearchCriteria;
 import com.tarento.commenthub.entity.Comment;
 import com.tarento.commenthub.transactional.utils.ApiResponse;
 import io.swagger.v3.core.util.Json;
@@ -31,4 +32,6 @@ public interface CommentService {
   ApiResponse likeComment(Map<String, Object> likePayload);
 
   ApiResponse getCommentLike(String commentId, String userId);
+
+  ApiResponse paginatedComment(SearchCriteria searchCriteria);
 }

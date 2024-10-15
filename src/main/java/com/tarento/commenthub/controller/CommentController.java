@@ -6,6 +6,7 @@ import com.tarento.commenthub.dto.CommentTreeIdentifierDTO;
 import com.tarento.commenthub.dto.MultipleWorkflowsCommentResponseDTO;
 import com.tarento.commenthub.dto.CommentsResoponseDTO;
 import com.tarento.commenthub.dto.ResponseDTO;
+import com.tarento.commenthub.dto.SearchCriteria;
 import com.tarento.commenthub.entity.Comment;
 import com.tarento.commenthub.entity.CommentTree;
 import com.tarento.commenthub.service.CommentService;
@@ -122,6 +123,12 @@ public class CommentController {
   public ResponseEntity getCommentLike(@RequestParam String commentId,
       @RequestParam String userId) {
     ApiResponse response = commentService.getCommentLike(commentId, userId);
+    return new ResponseEntity<>(response, response.getResponseCode());
+  }
+
+  @PostMapping("/search")
+  public ResponseEntity<?> search(@RequestBody SearchCriteria searchCriteria) {
+    ApiResponse response = commentService.paginatedComment(searchCriteria);
     return new ResponseEntity<>(response, response.getResponseCode());
   }
 }
