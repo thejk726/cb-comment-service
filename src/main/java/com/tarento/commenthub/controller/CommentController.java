@@ -119,7 +119,7 @@ public class CommentController {
     ApiResponse response = commentService.paginatedComment(searchCriteria);
     return new ResponseEntity<>(response, response.getResponseCode());
   }
-  @PostMapping("/comment/list")
+  @PostMapping("/list")
   public ResponseEntity<?> search(@RequestBody List<String> commentIds) {
     ApiResponse response = commentService.listOfComments(commentIds);
     return new ResponseEntity<>(response, response.getResponseCode());
