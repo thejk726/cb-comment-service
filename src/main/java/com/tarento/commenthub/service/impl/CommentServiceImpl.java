@@ -413,6 +413,9 @@ public class CommentServiceImpl implements CommentService {
   public ApiResponse listOfComments(List<String> commentIds) {
     ApiResponse response = new ApiResponse();
     response.setResponseCode(HttpStatus.OK);
+    if (commentIds.size()==0){
+      return returnErrorMsg("Bad rqst", HttpStatus.BAD_REQUEST, response);
+    }
     List<Comment> comments = commentRepository.findByCommentIdInAndStatus(commentIds,
         Status.ACTIVE.name().toLowerCase());
     List<Map<String, Object>> userList = new ArrayList<>();
