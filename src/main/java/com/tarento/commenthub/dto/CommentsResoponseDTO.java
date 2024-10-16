@@ -23,4 +23,16 @@ public class CommentsResoponseDTO {
   private List<Map<String, Object>> users;
 
   private int commentCount;
+
+  public CommentsResoponseDTO(CommentTree commentTree, List<Comment> comments, List<Map<String, Object>> userList) {
+    this.commentTree = commentTree;
+    this.comments = comments;
+    this.users = userList;
+  }
+
+
+  public CommentsResoponseDTO(List<Comment> comments, List<Map<String, Object>> userList) {
+    this.comments = comments;
+    this.users = userList;
+  }
 }

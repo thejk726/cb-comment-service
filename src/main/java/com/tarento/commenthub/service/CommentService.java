@@ -22,16 +22,14 @@ public interface CommentService {
 
   CommentsResoponseDTO getComments(CommentTreeIdentifierDTO commentTreeIdentifierDTO);
 
-  List<MultipleWorkflowsCommentResponseDTO> getComments(String entityType, String entityId,
-      List<String> workflowList);
-
   Comment deleteCommentById(String commentId, CommentTreeIdentifierDTO commentTreeIdentifierDTO);
 
-  Comment resolveComment(String commentId);
 
   ApiResponse likeComment(Map<String, Object> likePayload);
 
   ApiResponse getCommentLike(String commentId, String userId);
 
   ApiResponse paginatedComment(SearchCriteria searchCriteria);
+
+  ApiResponse listOfComments(List<String> commentIds);
 }

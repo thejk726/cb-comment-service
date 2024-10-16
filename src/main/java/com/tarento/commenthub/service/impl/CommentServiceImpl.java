@@ -81,6 +81,12 @@ public class CommentServiceImpl implements CommentService {
   @Value("${jwt.secret.key}")
   private String jwtSecretKey;
 
+  @Value("${default.page.size}")
+  private int defaultLimit;
+
+  @Value("${default.offset}")
+  private int defaultOffset;
+
   @Autowired
   private CommentTreeRepository commentTreeRepository;
 
@@ -105,9 +111,7 @@ public class CommentServiceImpl implements CommentService {
     ((ObjectNode) payload).put(Constants.COMMENT_ID, comment.getCommentId());
     CommentTree commentTree = commentTreeService.updateCommentTree(payload);
 
-    ResponseDTO responseDTO = new ResponseDTO();
-    responseDTO.setComment(comment);
-    responseDTO.setCommentTree(commentTree);
+    ResponseDTO responseDTO = new ResponseDTO(commentTree, comment);
     return responseDTO;
   }
 
@@ -142,10 +146,7 @@ public class CommentServiceImpl implements CommentService {
             TimeUnit.SECONDS);
     CommentTree commentTree =
         commentTreeService.getCommentTreeById(paylaod.get(Constants.COMMENT_TREE_ID).asText());
-    ResponseDTO responseDTO = new ResponseDTO();
-    responseDTO.setComment(updatedComment);
-    responseDTO.setCommentTree(commentTree);
-
+    ResponseDTO responseDTO = new ResponseDTO(commentTree, updatedComment);
     return responseDTO;
   }
 
@@ -153,62 +154,21 @@ public class CommentServiceImpl implements CommentService {
   public CommentsResoponseDTO getComments(CommentTreeIdentifierDTO commentTreeIdentifierDTO) {
     CommentTree commentTree = commentTreeService.getCommentTree(commentTreeIdentifierDTO);
     JsonNode childNodes = commentTree.getCommentTreeData().get(Constants.CHILD_NODES);
+    //check whether this is present in redis or not based on the key cmmentTreeId
     List<String> childNodeList = objectMapper.convertValue(childNodes, List.class);
     log.info("CommentServiceImpl::getComments::fetch comments from redis");
-    List<Comment> comments = redisTemplate.opsForValue().multiGet(getKeys(childNodeList));
+    //call it from postgres remove redis reading
+    List<Comment> comments = null;
     if (containsNull(comments)) {
       log.info("CommentServiceImpl::getComments::fetch Comments from postgres");
       // Fetch from db and add fetched comments into redis
       comments = commentRepository.findByCommentIdInAndStatus(childNodeList,
           Status.ACTIVE.name().toLowerCase());
       List<Map<String, Object>> userList = new ArrayList<>();
-      comments.stream().forEach(comment -> {
-        // Redis operation
-        redisTemplate.opsForValue()
-            .set(COMMENT_KEY + comment.getCommentId(), comment, redisTtl, TimeUnit.SECONDS);
+     userList = fetchUsersByCommentData(comments);
 
-        // Create a property map for each comment with the respective commentId
-        Map<String, Object> propertyMap = new HashMap<>();
-        propertyMap.put(Constants.ID, comment.getCommentData().get(Constants.COMMENT_SOURCE)
-            .get(Constants.USER_ID).asText());  // Use the commentId from each comment
-
-        // Fetch user information based on the commentId
-        List<Map<String, Object>> userInfoList = cassandraOperation.getRecordsByPropertiesWithoutFiltering(
-            Constants.KEYSPACE_SUNBIRD, Constants.TABLE_USER, propertyMap,
-            Arrays.asList(Constants.PROFILE_DETAILS, Constants.FIRST_NAME), null);
-        userInfoList.get(0);
-
-        Map<String, Object> userMap = new HashMap<>();
-//        userMap.put(Constants.COMMENT_ID, comment.getCommentId());
-        userMap.put(Constants.USER_ID, comment.getCommentData().get(Constants.COMMENT_SOURCE)
-            .get(Constants.USER_ID).asText());
-        userMap.put(Constants.USER_NAME, userInfoList.get(0).get(Constants.FIRST_NAME));
-        String profileDetails = (String) userInfoList.get(0).get(Constants.PROFILE_DETAILS);
-        if (StringUtils.isNotEmpty(profileDetails)) {
-          try {
-            Map<String, Object> profileDetailsMap = null;
-            String profileImageUrl = "";
-            profileDetailsMap = objectMapper.readValue(profileDetails,
-                new TypeReference<HashMap<String, Object>>() {
-                });
-            if (MapUtils.isNotEmpty(profileDetailsMap) && profileDetailsMap.containsKey(
-                Constants.PROFILE_IMG) && StringUtils.isNotEmpty(
-                (String) profileDetailsMap.get(Constants.PROFILE_IMG))) {
-              profileImageUrl = (String) profileDetailsMap.get(Constants.PROFILE_IMG);
-              userMap.put(Constants.PROFILE_IMG, profileImageUrl);
-            }
-          } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
-          }
-        }
-
-        userList.add(userMap);
-      });
-
-      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO();
-      commentsResoponseDTO.setComments(comments);
-      commentsResoponseDTO.setUsers(userList);
-      commentsResoponseDTO.setCommentTree(commentTree);
+      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree, comments, userList);
+      //store it in redis with commentTreeId as key:: TO DO
       Optional.ofNullable(comments)
           .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
       return commentsResoponseDTO;
@@ -216,42 +176,6 @@ public class CommentServiceImpl implements CommentService {
     return null;
   }
 
-  @Override
-  public List<MultipleWorkflowsCommentResponseDTO> getComments(String entityType, String entityId,
-      List<String> workflowList) {
-
-    List<CommentTree> commentTreeList = commentTreeService.getAllCommentTreeForMultipleWorkflows(entityType,
-        entityId,
-        workflowList);
-    if(commentTreeList.isEmpty()){
-      throw new CommentException(Constants.ERROR, "Comment Tree not found", HttpStatus.OK.value());
-    }
-    return commentTreeList.stream()
-        .map(commentTree -> {
-          JsonNode childNodes = commentTree.getCommentTreeData().get(Constants.CHILD_NODES);
-          List<String> childNodeList = objectMapper.convertValue(childNodes, List.class);
-          log.info("CommentServiceImpl::getComments::fetch comments from redis");
-          List<Comment> comments = redisTemplate.opsForValue().multiGet(getKeys(childNodeList));
-          if (containsNull(comments)) {
-            log.info("CommentServiceImpl::getComments::fetch Comments from postgres");
-            // Fetch from db and add fetched comments into redis
-            comments = commentRepository.findByCommentIdInAndStatus(childNodeList,
-                Status.ACTIVE.name().toLowerCase());
-            comments.forEach(comment ->
-                redisTemplate.opsForValue()
-                    .set(COMMENT_KEY + comment.getCommentId(), comment, redisTtl, TimeUnit.SECONDS)
-            );
-          }
-          MultipleWorkflowsCommentResponseDTO multipleWorkflowsCommentResponseDTO = new MultipleWorkflowsCommentResponseDTO();
-          multipleWorkflowsCommentResponseDTO.setCommentTree(commentTree);
-          Optional.ofNullable(comments)
-              .ifPresent(commentsList -> multipleWorkflowsCommentResponseDTO.setCommentCount(
-                  commentsList.size()));
-          multipleWorkflowsCommentResponseDTO.setComments(comments);
-          return multipleWorkflowsCommentResponseDTO;
-        })
-        .collect(Collectors.toList());
-  }
 
   @Override
   public Comment deleteCommentById(
@@ -278,7 +202,7 @@ public class CommentServiceImpl implements CommentService {
     return uuid.toString();
   }
 
-  public Comment getPersistedComment(JsonNode commentPayload) {
+  private Comment getPersistedComment(JsonNode commentPayload) {
     Comment comment = new Comment();
     String commentId = generateCommentId();
     comment.setCommentId(commentId);
@@ -321,25 +245,8 @@ public class CommentServiceImpl implements CommentService {
         .collect(Collectors.toList());
   }
 
-  @Override
-  public Comment resolveComment(String commentId) {
-    log.info("CommentServiceImpl::resolveComment: Resolving comment with ID: {}", commentId);
-    Optional<Comment> fetchedComment = commentRepository.findById(commentId);
-    if (!fetchedComment.isPresent()) {
-      throw new CommentException(Constants.ERROR, "No such comment found");
-    }
-    Comment comment = fetchedComment.get();
-    ObjectNode objectNode = (ObjectNode) comment.getCommentData();
-    objectNode.put(Constants.COMMENT_RESOLVED, Constants.TRUE);
-    Timestamp currentTime = new Timestamp(System.currentTimeMillis());
-    comment.setLastUpdatedDate(currentTime);
-    comment = commentRepository.save(comment);
-    redisTemplate.opsForValue()
-        .set(COMMENT_KEY + commentId, comment, redisTtl,
-            TimeUnit.SECONDS);
-    return comment;
-  }
 
+  //need for refactoring later
   @Override
   public ApiResponse likeComment(Map<String, Object> likePayload) {
     ApiResponse response = new ApiResponse();
@@ -424,6 +331,7 @@ public class CommentServiceImpl implements CommentService {
     return response;
   }
 
+  //need to write a method to fetch all the likes and dilikes of a  coment
   @Override
   public ApiResponse getCommentLike(String commentId, String userId) {
     ApiResponse response = new ApiResponse();
@@ -455,30 +363,24 @@ public class CommentServiceImpl implements CommentService {
     String error = validateSearchPayload(searchCriteria);
     ApiResponse response = new ApiResponse();
     response.setResponseCode(HttpStatus.OK);
-    int defaultLimit = 20; // Default limit to 20 records
-    int defaultOffset = 0;
     if (StringUtils.isNotBlank(error)) {
-      response.setResponseCode(HttpStatus.BAD_REQUEST);
-      response.getParams().setErr(error);
-      return response;
+      return returnErrorMsg(error, HttpStatus.BAD_REQUEST, response);
     }
     String commentTreeId = "";
     if (searchCriteria.getCommentTreeId().isEmpty()) {
-      CommentTreeIdentifierDTO commentTreeIdentifierDTO = new CommentTreeIdentifierDTO();
-      commentTreeIdentifierDTO.setEntityType(searchCriteria.getEntityType());
-      commentTreeIdentifierDTO.setEntityId(searchCriteria.getEntityId());
-      commentTreeIdentifierDTO.setWorkflow(searchCriteria.getWorkflow());
+      CommentTreeIdentifierDTO commentTreeIdentifierDTO = new CommentTreeIdentifierDTO(
+          searchCriteria.getEntityType(), searchCriteria.getEntityId(),
+          searchCriteria.getWorkflow());
       commentTreeId = generateJwtTokenKey(commentTreeIdentifierDTO);
     } else {
       commentTreeId = searchCriteria.getCommentTreeId();
     }
     Optional<CommentTree> commentTree = commentTreeRepository.findById(commentTreeId);
     if (!commentTree.isPresent()) {
-      response.setResponseCode(HttpStatus.NOT_FOUND);
       response.getParams().setErr("CommentTree Not found");
-      return response;
+      return returnErrorMsg("CommentTree Not found", HttpStatus.NOT_FOUND, response);
     }
-    JsonNode childNodes = commentTree.get().getCommentTreeData().get(Constants.CHILD_NODES);
+    JsonNode childNodes = commentTree.get().getCommentTreeData().get(Constants.FIRST_LEVEL_NODES);
     List<String> childNodeList = objectMapper.convertValue(childNodes, List.class);
     log.info("CommentServiceImpl::getComments::fetch comments from redis");
 //    List<Comment> comments = redisTemplate.opsForValue().multiGet(getKeys(childNodeList));
@@ -493,55 +395,10 @@ public class CommentServiceImpl implements CommentService {
           Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
       comments = commentRepository.findByCommentIdIn(childNodeList, pageable).getContent();
       // Fetch from db and add fetched comments into redis
-//      comments = commentRepository.findByCommentIdInAndStatus(childNodeList,
-//          Status.ACTIVE.name().toLowerCase());
       List<Map<String, Object>> userList = new ArrayList<>();
-      comments.stream().forEach(comment -> {
-        // Redis operation
-//        redisTemplate.opsForValue()
-//            .set(COMMENT_KEY + comment.getCommentId(), comment, redisTtl, TimeUnit.SECONDS);
-
-        // Create a property map for each comment with the respective commentId
-        Map<String, Object> propertyMap = new HashMap<>();
-        propertyMap.put(Constants.ID, comment.getCommentData().get(Constants.COMMENT_SOURCE)
-            .get(Constants.USER_ID).asText());  // Use the commentId from each comment
-
-        // Fetch user information based on the commentId
-        List<Map<String, Object>> userInfoList = cassandraOperation.getRecordsByPropertiesWithoutFiltering(
-            Constants.KEYSPACE_SUNBIRD, Constants.TABLE_USER, propertyMap,
-            Arrays.asList(Constants.PROFILE_DETAILS, Constants.FIRST_NAME), null);
-
-        Map<String, Object> userMap = new HashMap<>();
-//        userMap.put(Constants.COMMENT_ID, comment.getCommentId());
-        userMap.put(Constants.USER_ID, comment.getCommentData().get(Constants.COMMENT_SOURCE)
-            .get(Constants.USER_ID).asText());
-        userMap.put(Constants.USER_NAME, userInfoList.get(0).get(Constants.FIRST_NAME));
-        String profileDetails = (String) userInfoList.get(0).get(Constants.PROFILE_DETAILS);
-        if (StringUtils.isNotEmpty(profileDetails)) {
-          try {
-            Map<String, Object> profileDetailsMap = null;
-            String profileImageUrl = "";
-            profileDetailsMap = objectMapper.readValue(profileDetails,
-                new TypeReference<HashMap<String, Object>>() {
-                });
-            if (MapUtils.isNotEmpty(profileDetailsMap) && profileDetailsMap.containsKey(
-                Constants.PROFILE_IMG) && StringUtils.isNotEmpty(
-                (String) profileDetailsMap.get(Constants.PROFILE_IMG))) {
-              profileImageUrl = (String) profileDetailsMap.get(Constants.PROFILE_IMG);
-              userMap.put(Constants.PROFILE_IMG, profileImageUrl);
-            }
-          } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
-          }
-        }
-
-        userList.add(userMap);
-      });
-
-      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO();
-      commentsResoponseDTO.setComments(comments);
-      commentsResoponseDTO.setUsers(userList);
-      commentsResoponseDTO.setCommentTree(commentTree.get());
+      userList = fetchUsersByCommentData(comments);
+      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree.get(),
+          comments, userList);
       Optional.ofNullable(comments)
           .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
       Map<String, Object> resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
@@ -550,6 +407,31 @@ public class CommentServiceImpl implements CommentService {
       return response;
     }
     return null;
+  }
+
+  @Override
+  public ApiResponse listOfComments(List<String> commentIds) {
+    ApiResponse response = new ApiResponse();
+    response.setResponseCode(HttpStatus.OK);
+    List<Comment> comments = commentRepository.findByCommentIdInAndStatus(commentIds,
+        Status.ACTIVE.name().toLowerCase());
+    List<Map<String, Object>> userList = new ArrayList<>();
+    userList = fetchUsersByCommentData(comments);
+
+    CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(comments, userList);
+    //store it in redis with commentTreeId as key:: TO DO
+    Optional.ofNullable(comments)
+        .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
+    Map<String, Object> resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
+
+    response.setResult(resultMap);
+    return response;
+  }
+
+  private  ApiResponse returnErrorMsg(String error, HttpStatus type, ApiResponse response){
+    response.setResponseCode(type);
+    response.getParams().setErr(error);
+    return response;
   }
 
   private String validateSearchPayload(SearchCriteria searchCriteria) {
@@ -624,6 +506,55 @@ public class CommentServiceImpl implements CommentService {
 
     log.info("commentTreeId: {}", jwtToken);
     return jwtToken;
+  }
+
+  private List<Map<String, Object>> fetchUsersByCommentData (List<Comment> comments) {
+    List<Map<String, Object>> userList = new ArrayList<>();
+    List<String> userIds = comments.stream()
+        .map(comment -> comment.getCommentData().get(Constants.COMMENT_SOURCE)
+            .get(Constants.USER_ID).asText())
+        .collect(Collectors.toList());
+    Map<String, Object> propertyMap = new HashMap<>();
+    propertyMap.put(Constants.ID, userIds);
+    List<Map<String, Object>> userInfoList = cassandraOperation.getRecordsByPropertiesWithoutFiltering(
+        Constants.KEYSPACE_SUNBIRD, Constants.TABLE_USER, propertyMap,
+        Arrays.asList(Constants.PROFILE_DETAILS, Constants.FIRST_NAME, Constants.ID), null);
+
+    userList = userInfoList.stream()
+        .map(userInfo -> {
+          Map<String, Object> userMap = new HashMap<>();
+
+          // Extract user ID and user name
+          String userId = (String) userInfo.get(Constants.ID);
+          String userName = (String) userInfo.get(Constants.FIRST_NAME);
+
+          userMap.put(Constants.USER_ID, userId);
+          userMap.put(Constants.USER_NAME, userName);
+
+          // Process profile details if present
+          String profileDetails = (String) userInfo.get(Constants.PROFILE_DETAILS);
+          if (StringUtils.isNotEmpty(profileDetails)) {
+            try {
+              // Convert JSON profile details to a Map
+              Map<String, Object> profileDetailsMap = objectMapper.readValue(profileDetails,
+                  new TypeReference<HashMap<String, Object>>() {});
+
+              // Check for profile image and add to userMap if available
+              if (MapUtils.isNotEmpty(profileDetailsMap) && profileDetailsMap.containsKey(Constants.PROFILE_IMG)) {
+                String profileImageUrl = (String) profileDetailsMap.get(Constants.PROFILE_IMG);
+                if (StringUtils.isNotEmpty(profileImageUrl)) {
+                  userMap.put(Constants.PROFILE_IMG, profileImageUrl);
+                }
+              }
+            } catch (JsonProcessingException e) {
+              throw new RuntimeException(e);
+            }
+          }
+
+          return userMap;
+        })
+        .collect(Collectors.toList());
+    return userList;
   }
 
 }
