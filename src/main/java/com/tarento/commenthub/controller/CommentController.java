@@ -67,14 +67,6 @@ public class CommentController {
     return commentService.getComments(commentTreeIdentifierDTO);
   }
 
-  @GetMapping("/v1/multipleWorkflows")
-  public List<MultipleWorkflowsCommentResponseDTO> getCommentsForMultipleWorkflows(
-      @RequestParam(name = "entityType") String entityType,
-      @RequestParam(name = "entityId") String entityId,
-      @RequestParam(name = "workflow") List<String> workflows) {
-    return commentService.getComments(entityType, entityId, workflows);
-  }
-
   @DeleteMapping("/v1/delete/{commentId}")
   public Comment deleteComment(
       @PathVariable String commentId,
@@ -103,10 +95,6 @@ public class CommentController {
     return commentTreeService.setCommentTreeStatusToResolved(commentTreeIdentifierDTO);
   }
 
-  @PostMapping("/v1/resolve/{commentId}")
-  public Comment resolveComment(@PathVariable String commentId) {
-    return commentService.resolveComment(commentId);
-  }
 
   @GetMapping("/health")
   public String healthCheck() {
@@ -131,4 +119,10 @@ public class CommentController {
     ApiResponse response = commentService.paginatedComment(searchCriteria);
     return new ResponseEntity<>(response, response.getResponseCode());
   }
+  @PostMapping("/list")
+  public ResponseEntity<?> search(@RequestBody List<String> commentIds) {
+    ApiResponse response = commentService.listOfComments(commentIds);
+    return new ResponseEntity<>(response, response.getResponseCode());
+  }
+
 }
