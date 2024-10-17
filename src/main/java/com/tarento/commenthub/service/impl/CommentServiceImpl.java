@@ -16,7 +16,6 @@ import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.ValidationMessage;
 import com.tarento.commenthub.constant.Constants;
 import com.tarento.commenthub.dto.CommentTreeIdentifierDTO;
-import com.tarento.commenthub.dto.MultipleWorkflowsCommentResponseDTO;
 import com.tarento.commenthub.dto.CommentsResoponseDTO;
 import com.tarento.commenthub.dto.ResponseDTO;
 import com.tarento.commenthub.dto.SearchCriteria;
@@ -29,7 +28,6 @@ import com.tarento.commenthub.service.CommentService;
 import com.tarento.commenthub.service.CommentTreeService;
 import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
 import com.tarento.commenthub.transactional.utils.ApiResponse;
-import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
 import com.tarento.commenthub.utility.Status;
 import java.io.InputStream;
 import java.sql.Timestamp;
@@ -111,8 +109,41 @@ public class CommentServiceImpl implements CommentService {
     ((ObjectNode) payload).put(Constants.COMMENT_ID, comment.getCommentId());
     CommentTree commentTree = commentTreeService.updateCommentTree(payload);
 
+    Pageable pageable = PageRequest.of(defaultOffset, defaultLimit,
+        Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
+    JsonNode childNodes = commentTree.getCommentTreeData().get(Constants.FIRST_LEVEL_NODES);
+    List<String> childNodeList = objectMapper.convertValue(childNodes, List.class);
+    List<Comment> comments = commentRepository.findByCommentIdIn(childNodeList, pageable)
+        .getContent();
+    // Fetch from db and add fetched comments into redis
+    List<Map<String, Object>> userList = new ArrayList<>();
+    userList = fetchUsersByCommentData(comments);
+    CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
+        comments, userList);
+    Optional.ofNullable(comments)
+        .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
+    Map<String, Object> resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
+    resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
+
+    deleteAndUpdateTheRedisKey(String.valueOf(payload.get(Constants.COMMENT_TREE_ID)), resultMap);
     ResponseDTO responseDTO = new ResponseDTO(commentTree, comment);
     return responseDTO;
+  }
+
+  private void deleteAndUpdateTheRedisKey(String commentTreeId, Map<String, Object> resultMap) {
+    String token = generateRedisJwtTokenKey(commentTreeId
+        , defaultOffset, defaultLimit);
+    deleteRedisKey(commentTreeId);
+    redisTemplate.opsForValue()
+        .set(token,
+            resultMap, redisTtl,
+            TimeUnit.SECONDS);
+  }
+
+  private void deleteRedisKey(String commentTreeId) {
+    String token = generateRedisJwtTokenKey(commentTreeId
+        , defaultOffset, defaultLimit);
+    redisTemplate.delete(token);
   }
 
   @Override
@@ -147,6 +178,7 @@ public class CommentServiceImpl implements CommentService {
     CommentTree commentTree =
         commentTreeService.getCommentTreeById(paylaod.get(Constants.COMMENT_TREE_ID).asText());
     ResponseDTO responseDTO = new ResponseDTO(commentTree, updatedComment);
+    deleteRedisKey(String.valueOf(paylaod.get(Constants.COMMENT_TREE_ID)));
     return responseDTO;
   }
 
@@ -303,9 +335,13 @@ public class CommentServiceImpl implements CommentService {
         Comment commentToBeUpdated = optComment.get();
         commentToBeUpdated.setCommentData(commentData);
         Comment updatedComment = commentRepository.save(commentToBeUpdated);
-        redisTemplate.opsForValue()
-            .set(COMMENT_KEY + commentToBeUpdated.getCommentId(), updatedComment, redisTtl,
-                TimeUnit.SECONDS);
+        if (likePayload.containsKey(likePayload.get(Constants.COMMENT_TREE_ID))
+            && StringUtils.isBlank((String) likePayload.get(Constants.COMMENT_TREE_ID))
+            && likePayload.get(Constants.COMMENT_TREE_ID) != null) {
+          deleteRedisKey(
+              generateRedisJwtTokenKey((String) likePayload.get(Constants.COMMENT_TREE_ID),
+                  defaultOffset, defaultLimit));
+        }
       } else {
         propertyMap.put(Constants.FLAG, likePayload.get(Constants.FLAG));
         cassandraOperation.insertRecord(Constants.KEYSPACE_SUNBIRD, "comment_likes", propertyMap);
@@ -319,9 +355,13 @@ public class CommentServiceImpl implements CommentService {
         Comment commentToBeUpdated = optComment.get();
         commentToBeUpdated.setCommentData(commentData);
         Comment updatedComment = commentRepository.save(commentToBeUpdated);
-        redisTemplate.opsForValue()
-            .set(COMMENT_KEY + commentToBeUpdated.getCommentId(), updatedComment, redisTtl,
-                TimeUnit.SECONDS);
+        if (likePayload.containsKey(likePayload.get(Constants.COMMENT_TREE_ID))
+            && StringUtils.isBlank((String) likePayload.get(Constants.COMMENT_TREE_ID))
+            && likePayload.get(Constants.COMMENT_TREE_ID) != null) {
+          deleteRedisKey(
+              generateRedisJwtTokenKey((String) likePayload.get(Constants.COMMENT_TREE_ID),
+                  defaultOffset, defaultLimit));
+        }
       }
     } catch (Exception e) {
       response.setResponseCode(HttpStatus.INTERNAL_SERVER_ERROR);
@@ -382,31 +422,35 @@ public class CommentServiceImpl implements CommentService {
     }
     JsonNode childNodes = commentTree.get().getCommentTreeData().get(Constants.FIRST_LEVEL_NODES);
     List<String> childNodeList = objectMapper.convertValue(childNodes, List.class);
-    log.info("CommentServiceImpl::getComments::fetch comments from redis");
-//    List<Comment> comments = redisTemplate.opsForValue().multiGet(getKeys(childNodeList));
-    List<Comment> comments = null;
-    if (containsNull(comments)) {
+    int limit = (searchCriteria.getLimit() != null) ? searchCriteria.getLimit() : defaultLimit;
+    int offset =
+        (searchCriteria.getOffset() != null) ? searchCriteria.getOffset() : defaultOffset;
+    Map<String, Object> resultMap = (Map<String, Object>) redisTemplate.opsForValue()
+        .get(generateRedisJwtTokenKey(commentTreeId, offset, limit));
+    if (MapUtils.isEmpty(resultMap)) {
       log.info("CommentServiceImpl::getComments::fetch Comments from postgres");
-      int limit = (searchCriteria.getLimit() != null) ? searchCriteria.getLimit() : defaultLimit;
-      int offset =
-          (searchCriteria.getOffset() != null) ? searchCriteria.getOffset() : defaultOffset;
-
       Pageable pageable = PageRequest.of(offset, limit,
           Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
-      comments = commentRepository.findByCommentIdIn(childNodeList, pageable).getContent();
+      List<Comment> comments = commentRepository.findByCommentIdIn(childNodeList, pageable)
+          .getContent();
       // Fetch from db and add fetched comments into redis
       List<Map<String, Object>> userList = new ArrayList<>();
       userList = fetchUsersByCommentData(comments);
       CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree.get(),
           comments, userList);
       Optional.ofNullable(comments)
-          .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
-      Map<String, Object> resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
-
+          .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
+      resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
+      response.setResult(resultMap);
+      redisTemplate.opsForValue()
+          .set(generateRedisJwtTokenKey(commentTreeId, offset, limit), resultMap, redisTtl,
+              TimeUnit.SECONDS);
+      return response;
+    } else {
+      log.info("CommentServiceImpl::getComments::fetch comments from redis");
       response.setResult(resultMap);
       return response;
     }
-    return null;
   }
 
   @Override
@@ -482,7 +526,7 @@ public class CommentServiceImpl implements CommentService {
       errList.add(Constants.FLAG);
     } else if (!Constants.LIKE.equalsIgnoreCase(voteType) && !Constants.DISLIKE.equalsIgnoreCase(
         voteType)) {
-      errList.add("fla must be either 'like' or 'dislike'");
+      errList.add("flag must be either 'like' or 'dislike'");
     }
     if (!errList.isEmpty()) {
       str.append("Failed Due To Missing Params - ").append(errList).append(".");
@@ -558,6 +602,19 @@ public class CommentServiceImpl implements CommentService {
         })
         .collect(Collectors.toList());
     return userList;
+  }
+
+  public String generateRedisJwtTokenKey(String commentTreeId, Integer offset, Integer limit) {
+      try {
+        return JWT.create()
+            .withClaim(Constants.COMMENT_TREE_ID, commentTreeId)  // Add commentTreeId
+            .withClaim(Constants.OFFSET, offset)                  // Add offset
+            .withClaim(Constants.LIMIT, limit)
+            .sign(Algorithm.HMAC256(jwtSecretKey));
+      }catch (Exception e){
+        log.error("Excpetion occured while creating the redis token::", e);
+      }
+    return "";
   }
 
 }
