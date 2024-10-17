@@ -92,6 +92,8 @@ public class Constants {
   public static final String USER_NAME = "userName";
   public static final String PROFILE_IMG = "profileImageUrl";
   public static final String CREATED_DATE = "createdDate";
+  public static final String OFFSET = "offset";
+  public static final String LIMIT = "limit";
 
 
 }
