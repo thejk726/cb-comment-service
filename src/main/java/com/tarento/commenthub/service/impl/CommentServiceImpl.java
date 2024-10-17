@@ -16,7 +16,6 @@ import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.ValidationMessage;
 import com.tarento.commenthub.constant.Constants;
 import com.tarento.commenthub.dto.CommentTreeIdentifierDTO;
-import com.tarento.commenthub.dto.MultipleWorkflowsCommentResponseDTO;
 import com.tarento.commenthub.dto.CommentsResoponseDTO;
 import com.tarento.commenthub.dto.ResponseDTO;
 import com.tarento.commenthub.dto.SearchCriteria;
@@ -29,7 +28,6 @@ import com.tarento.commenthub.service.CommentService;
 import com.tarento.commenthub.service.CommentTreeService;
 import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
 import com.tarento.commenthub.transactional.utils.ApiResponse;
-import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
 import com.tarento.commenthub.utility.Status;
 import java.io.InputStream;
 import java.sql.Timestamp;
@@ -126,15 +124,26 @@ public class CommentServiceImpl implements CommentService {
         .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
     Map<String, Object> resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
     resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
-    String token = generateRedisJwtTokenKey(
-        String.valueOf(payload.get(Constants.COMMENT_TREE_ID)), defaultOffset, defaultLimit);
-    redisTemplate.delete(token);
+
+    deleteAndUpdateTheRedisKey(String.valueOf(payload.get(Constants.COMMENT_TREE_ID)), resultMap);
+    ResponseDTO responseDTO = new ResponseDTO(commentTree, comment);
+    return responseDTO;
+  }
+
+  private void deleteAndUpdateTheRedisKey(String commentTreeId, Map<String, Object> resultMap) {
+    String token = generateRedisJwtTokenKey(commentTreeId
+        , defaultOffset, defaultLimit);
+    deleteRedisKey(commentTreeId);
     redisTemplate.opsForValue()
         .set(token,
             resultMap, redisTtl,
             TimeUnit.SECONDS);
-    ResponseDTO responseDTO = new ResponseDTO(commentTree, comment);
-    return responseDTO;
+  }
+
+  private void deleteRedisKey(String commentTreeId) {
+    String token = generateRedisJwtTokenKey(commentTreeId
+        , defaultOffset, defaultLimit);
+    redisTemplate.delete(token);
   }
 
   @Override
@@ -169,6 +178,7 @@ public class CommentServiceImpl implements CommentService {
     CommentTree commentTree =
         commentTreeService.getCommentTreeById(paylaod.get(Constants.COMMENT_TREE_ID).asText());
     ResponseDTO responseDTO = new ResponseDTO(commentTree, updatedComment);
+    deleteRedisKey(String.valueOf(paylaod.get(Constants.COMMENT_TREE_ID)));
     return responseDTO;
   }
 
