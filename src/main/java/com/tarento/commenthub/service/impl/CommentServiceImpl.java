@@ -321,6 +321,13 @@ public class CommentServiceImpl implements CommentService {
         compositeKey.put(Constants.USERID, userId);
         cassandraOperation.updateRecordByCompositeKey(Constants.KEYSPACE_SUNBIRD, "comment_likes",
             map, compositeKey);
+        if (likePayload.containsKey(likePayload.get(Constants.COMMENT_TREE_ID))
+            && StringUtils.isBlank((String) likePayload.get(Constants.COMMENT_TREE_ID))
+            && likePayload.get(Constants.COMMENT_TREE_ID) != null) {
+          deleteRedisKey(
+              generateRedisJwtTokenKey((String) likePayload.get(Constants.COMMENT_TREE_ID),
+                  defaultOffset, defaultLimit));
+        }
         if (commentData.has((String) likePayload.get(Constants.FLAG))) {
           Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG)).asLong();
           ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG),
@@ -335,12 +342,16 @@ public class CommentServiceImpl implements CommentService {
         Comment commentToBeUpdated = optComment.get();
         commentToBeUpdated.setCommentData(commentData);
         Comment updatedComment = commentRepository.save(commentToBeUpdated);
-        redisTemplate.opsForValue()
-            .set(COMMENT_KEY + commentToBeUpdated.getCommentId(), updatedComment, redisTtl,
-                TimeUnit.SECONDS);
       } else {
         propertyMap.put(Constants.FLAG, likePayload.get(Constants.FLAG));
         cassandraOperation.insertRecord(Constants.KEYSPACE_SUNBIRD, "comment_likes", propertyMap);
+        if (likePayload.containsKey(likePayload.get(Constants.COMMENT_TREE_ID))
+            && StringUtils.isBlank((String) likePayload.get(Constants.COMMENT_TREE_ID))
+            && likePayload.get(Constants.COMMENT_TREE_ID) != null) {
+          deleteRedisKey(
+              generateRedisJwtTokenKey((String) likePayload.get(Constants.COMMENT_TREE_ID),
+                  defaultOffset, defaultLimit));
+        }
         if (commentData.has((String) likePayload.get(Constants.FLAG))) {
           Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG)).asLong();
           ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG),
@@ -351,9 +362,6 @@ public class CommentServiceImpl implements CommentService {
         Comment commentToBeUpdated = optComment.get();
         commentToBeUpdated.setCommentData(commentData);
         Comment updatedComment = commentRepository.save(commentToBeUpdated);
-        redisTemplate.opsForValue()
-            .set(COMMENT_KEY + commentToBeUpdated.getCommentId(), updatedComment, redisTtl,
-                TimeUnit.SECONDS);
       }
     } catch (Exception e) {
       response.setResponseCode(HttpStatus.INTERNAL_SERVER_ERROR);
@@ -518,7 +526,7 @@ public class CommentServiceImpl implements CommentService {
       errList.add(Constants.FLAG);
     } else if (!Constants.LIKE.equalsIgnoreCase(voteType) && !Constants.DISLIKE.equalsIgnoreCase(
         voteType)) {
-      errList.add("fla must be either 'like' or 'dislike'");
+      errList.add("flag must be either 'like' or 'dislike'");
     }
     if (!errList.isEmpty()) {
       str.append("Failed Due To Missing Params - ").append(errList).append(".");
