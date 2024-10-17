@@ -110,8 +110,7 @@ public class CommentServiceImpl implements CommentService {
     Comment comment = getPersistedComment(payload);
     ((ObjectNode) payload).put(Constants.COMMENT_ID, comment.getCommentId());
     CommentTree commentTree = commentTreeService.updateCommentTree(payload);
-    redisTemplate.delete(generateRedisJwtTokenKey(
-        String.valueOf(payload.get(Constants.COMMENT_TREE_ID)), defaultOffset, defaultLimit));
+
     Pageable pageable = PageRequest.of(defaultOffset, defaultLimit,
         Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
     JsonNode childNodes = commentTree.getCommentTreeData().get(Constants.FIRST_LEVEL_NODES);
@@ -127,8 +126,11 @@ public class CommentServiceImpl implements CommentService {
         .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
     Map<String, Object> resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
     resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
+    String token = generateRedisJwtTokenKey(
+        String.valueOf(payload.get(Constants.COMMENT_TREE_ID)), defaultOffset, defaultLimit);
+    redisTemplate.delete(token);
     redisTemplate.opsForValue()
-        .set(generateRedisJwtTokenKey(commentTree.getCommentTreeId(), defaultOffset, defaultLimit),
+        .set(token,
             resultMap, redisTtl,
             TimeUnit.SECONDS);
     ResponseDTO responseDTO = new ResponseDTO(commentTree, comment);
