@@ -109,23 +109,7 @@ public class CommentServiceImpl implements CommentService {
     ((ObjectNode) payload).put(Constants.COMMENT_ID, comment.getCommentId());
     CommentTree commentTree = commentTreeService.updateCommentTree(payload);
 
-    Pageable pageable = PageRequest.of(defaultOffset, defaultLimit,
-        Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
-    JsonNode childNodes = commentTree.getCommentTreeData().get(Constants.FIRST_LEVEL_NODES);
-    List<String> childNodeList = objectMapper.convertValue(childNodes, List.class);
-    List<Comment> comments = commentRepository.findByCommentIdIn(childNodeList, pageable)
-        .getContent();
-    // Fetch from db and add fetched comments into redis
-    List<Map<String, Object>> userList = new ArrayList<>();
-    userList = fetchUsersByCommentData(comments);
-    CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
-        comments, userList);
-    Optional.ofNullable(comments)
-        .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
-    Map<String, Object> resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
-    resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
-
-    deleteAndUpdateTheRedisKey(String.valueOf(payload.get(Constants.COMMENT_TREE_ID)), resultMap);
+    deleteRedisKey(String.valueOf(payload.get(Constants.COMMENT_TREE_ID)));
     ResponseDTO responseDTO = new ResponseDTO(commentTree, comment);
     return responseDTO;
   }
