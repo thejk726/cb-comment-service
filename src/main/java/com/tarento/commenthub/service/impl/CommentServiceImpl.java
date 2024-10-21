@@ -444,12 +444,11 @@ public class CommentServiceImpl implements CommentService {
     if (commentIds.size()==0){
       return returnErrorMsg("Bad rqst", HttpStatus.BAD_REQUEST, response);
     }
+    //added sorting
     int offset = defaultOffset;
     int limit = defaultLimit;
-    Pageable pageable = PageRequest.of(offset, limit,
-        Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
-    List<Comment> comments = commentRepository.findByCommentIdIn(commentIds, pageable)
-        .getContent();
+    Sort sort = Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE);
+    List<Comment> comments = commentRepository.findByCommentIdIn(commentIds, sort);
     List<Map<String, Object>> userList = new ArrayList<>();
     userList = fetchUsersByCommentData(comments);
 
