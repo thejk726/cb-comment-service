@@ -444,6 +444,7 @@ public class CommentServiceImpl implements CommentService {
     if (commentIds.size()==0){
       return returnErrorMsg("Bad rqst", HttpStatus.BAD_REQUEST, response);
     }
+    //added sorting
     int offset = defaultOffset;
     int limit = defaultLimit;
     Sort sort = Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE);
