@@ -24,4 +24,8 @@ public class SearchCriteria {
 
   private  String workflow;
 
+  //one variable for override cache
+
+  private boolean overrideCache;
+
 }

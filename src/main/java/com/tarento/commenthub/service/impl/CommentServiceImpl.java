@@ -409,32 +409,49 @@ public class CommentServiceImpl implements CommentService {
     int limit = (searchCriteria.getLimit() != null) ? searchCriteria.getLimit() : defaultLimit;
     int offset =
         (searchCriteria.getOffset() != null) ? searchCriteria.getOffset() : defaultOffset;
-    Map<String, Object> resultMap = (Map<String, Object>) redisTemplate.opsForValue()
-        .get(generateRedisJwtTokenKey(commentTreeId, offset, limit));
-    if (MapUtils.isEmpty(resultMap)) {
-      log.info("CommentServiceImpl::getComments::fetch Comments from postgres");
-      Pageable pageable = PageRequest.of(offset, limit,
-          Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
-      List<Comment> comments = commentRepository.findByCommentIdIn(childNodeList, pageable)
-          .getContent();
-      // Fetch from db and add fetched comments into redis
-      List<Map<String, Object>> userList = new ArrayList<>();
-      userList = fetchUsersByCommentData(comments);
-      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree.get(),
-          comments, userList);
-      Optional.ofNullable(comments)
-          .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
-      resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
-      response.setResult(resultMap);
+    Map<String, Object> resultMap = new HashMap<>();
+    if (!searchCriteria.isOverrideCache()) {
+      resultMap = (Map<String, Object>) redisTemplate.opsForValue()
+          .get(generateRedisJwtTokenKey(commentTreeId, offset, limit));
+    } else {
+      resultMap = fetchCommentFromPrimary(offset, limit, childNodeList, commentTree.get());
       redisTemplate.opsForValue()
           .set(generateRedisJwtTokenKey(commentTreeId, offset, limit), resultMap, redisTtl,
               TimeUnit.SECONDS);
+      response.setResult(resultMap);
+      return response;
+    }
+    if (MapUtils.isEmpty(resultMap)) {
+      log.info("CommentServiceImpl::getComments::fetch Comments from postgres");
+      resultMap = fetchCommentFromPrimary(offset, limit, childNodeList, commentTree.get());
+      redisTemplate.opsForValue()
+          .set(generateRedisJwtTokenKey(commentTreeId, offset, limit), resultMap, redisTtl,
+              TimeUnit.SECONDS);
+      response.setResult(resultMap);
       return response;
     } else {
       log.info("CommentServiceImpl::getComments::fetch comments from redis");
       response.setResult(resultMap);
       return response;
     }
+  }
+
+  private Map<String, Object> fetchCommentFromPrimary(int offset, int limit,
+      List<String> childNodeList, CommentTree commentTree) {
+    Map<String, Object> resultMap = new HashMap<>();
+    Pageable pageable = PageRequest.of(offset, limit,
+        Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
+    List<Comment> comments = commentRepository.findByCommentIdIn(childNodeList, pageable)
+        .getContent();
+    // Fetch from db and add fetched comments into redis
+    List<Map<String, Object>> userList = new ArrayList<>();
+    userList = fetchUsersByCommentData(comments);
+    CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
+        comments, userList);
+    Optional.ofNullable(comments)
+        .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
+    resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
+    return resultMap;
   }
 
   @Override
