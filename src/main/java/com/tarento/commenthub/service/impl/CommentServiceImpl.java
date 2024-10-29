@@ -14,6 +14,7 @@ import com.fasterxml.uuid.Generators;
 import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.ValidationMessage;
+import com.tarento.commenthub.authentication.util.AccessTokenValidator;
 import com.tarento.commenthub.constant.Constants;
 import com.tarento.commenthub.dto.CommentTreeIdentifierDTO;
 import com.tarento.commenthub.dto.CommentsResoponseDTO;
@@ -88,6 +89,9 @@ public class CommentServiceImpl implements CommentService {
   @Autowired
   private CommentTreeRepository commentTreeRepository;
 
+  @Autowired
+  private AccessTokenValidator accessTokenValidator;
+
   @Override
   public ResponseDTO addFirstCommentToCreateTree(JsonNode payload) {
     validatePayload(Constants.ADD_FIRST_COMMENT_PAYLOAD_VALIDATION_FILE, payload);
@@ -138,18 +142,23 @@ public class CommentServiceImpl implements CommentService {
       throw new CommentException(
           Constants.ERROR, "To update an existing comment, please provide a valid commentId.");
     }
-
     log.info("commentId: " + paylaod.get(Constants.COMMENT_ID).asText());
 
     Optional<Comment> optComment =
         commentRepository.findById(paylaod.get(Constants.COMMENT_ID).asText());
-
     if (!optComment.isPresent()
         || !optComment.get().getStatus().equalsIgnoreCase(Status.ACTIVE.name())) {
       throw new CommentException(
           Constants.ERROR, "The requested comment was not found or has been deleted.");
     }
+    if (!paylaod.get(Constants.COMMENT_DATA).get(Constants.COMMENT_SOURCE).get(Constants.USER_ID)
+        .asText()
+        .equalsIgnoreCase(optComment.get().getCommentData().get(Constants.COMMENT_SOURCE)
+            .get(Constants.USER_ID).asText())) {
+      throw new CommentException(
+          Constants.ERROR, "No access to edit the comment");
 
+    }
     Comment commentToBeUpdated = optComment.get();
     commentToBeUpdated.setCommentData(paylaod.get(Constants.COMMENT_DATA));
 
@@ -195,13 +204,24 @@ public class CommentServiceImpl implements CommentService {
 
   @Override
   public Comment deleteCommentById(
-      String commentId, CommentTreeIdentifierDTO commentTreeIdentifierDTO) {
+      String commentId, CommentTreeIdentifierDTO commentTreeIdentifierDTO, String token) {
     log.info("CommentServiceImpl::deleteCommentById: Deleting comment with ID: {}", commentId);
+    String userId = accessTokenValidator.verifyUserToken(token);
+    if (StringUtils.isBlank(userId)) {
+      throw new CommentException(Constants.ERROR, "Not a valid user");
+    }
     Optional<Comment> fetchedComment = commentRepository.findById(commentId);
     if (!fetchedComment.isPresent()) {
       throw new CommentException(Constants.ERROR, "No such comment found");
     }
     Comment comment = fetchedComment.get();
+    if (!userId
+        .equalsIgnoreCase(comment.getCommentData().get(Constants.COMMENT_SOURCE)
+            .get(Constants.USER_ID).asText())) {
+      throw new CommentException(
+          Constants.ERROR, "No access to edit the comment");
+
+    }
     if (!comment.getStatus().equalsIgnoreCase(Status.ACTIVE.name())) {
       throw new CommentException(
           Constants.ERROR, "You are trying to delete an already deleted comment");

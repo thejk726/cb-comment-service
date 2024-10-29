@@ -94,6 +94,13 @@ public class Constants {
   public static final String CREATED_DATE = "createdDate";
   public static final String OFFSET = "offset";
   public static final String LIMIT = "limit";
-
+  public static final String X_AUTH_TOKEN = "x-authenticated-user-token";
+  public static final String SSO_URL = "sso.url";
+  public static final String SSO_REALM = "sso.realm";
+  public static final String DOT_SEPARATOR = ".";
+  public static final String UNAUTHORIZED_USER = "Unauthorized";
+  public static final String SUB = "sub";
+  public static final String SHA_256_WITH_RSA = "SHA256withRSA";
+  public static final String ACCESS_TOKEN_PUBLICKEY_BASEPATH = "accesstoken.publickey.basepath";
 
 }
