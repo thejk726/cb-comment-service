@@ -22,7 +22,8 @@ public interface CommentService {
 
   CommentsResoponseDTO getComments(CommentTreeIdentifierDTO commentTreeIdentifierDTO);
 
-  Comment deleteCommentById(String commentId, CommentTreeIdentifierDTO commentTreeIdentifierDTO);
+  Comment deleteCommentById(String commentId, CommentTreeIdentifierDTO commentTreeIdentifierDTO,
+      String token);
 
 
   ApiResponse likeComment(Map<String, Object> likePayload);
@@ -32,4 +33,8 @@ public interface CommentService {
   ApiResponse paginatedComment(SearchCriteria searchCriteria);
 
   ApiResponse listOfComments(List<String> commentIds);
+
+  ApiResponse reportComment(Map<String, Object> request, String token);
+
+  ApiResponse deleteReportedComments(Map<String, Object> request, String token);
 }
