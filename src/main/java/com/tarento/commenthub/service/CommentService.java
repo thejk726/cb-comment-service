@@ -33,4 +33,8 @@ public interface CommentService {
   ApiResponse paginatedComment(SearchCriteria searchCriteria);
 
   ApiResponse listOfComments(List<String> commentIds);
+
+  ApiResponse reportComment(Map<String, Object> request, String token);
+
+  ApiResponse deleteReportedComments(Map<String, Object> request, String token);
 }

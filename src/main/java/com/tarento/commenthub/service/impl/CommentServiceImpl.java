@@ -207,7 +207,7 @@ public class CommentServiceImpl implements CommentService {
       String commentId, CommentTreeIdentifierDTO commentTreeIdentifierDTO, String token) {
     log.info("CommentServiceImpl::deleteCommentById: Deleting comment with ID: {}", commentId);
     String userId = accessTokenValidator.verifyUserToken(token);
-    if (StringUtils.isBlank(userId)) {
+    if (StringUtils.isBlank(userId) || userId.equalsIgnoreCase(Constants.UNAUTHORIZED_USER)) {
       throw new CommentException(Constants.ERROR, "Not a valid user");
     }
     Optional<Comment> fetchedComment = commentRepository.findById(commentId);
@@ -497,6 +497,80 @@ public class CommentServiceImpl implements CommentService {
 
     response.setResult(resultMap);
     return response;
+  }
+
+  @Override
+  public ApiResponse reportComment(Map<String, Object> request, String token) {
+    log.info("CommentServiceImpl:reportComment::inside the method");
+    ApiResponse response = new ApiResponse();
+    response.setResponseCode(HttpStatus.OK);
+    String userId = accessTokenValidator.verifyUserToken(token);
+    if (StringUtils.isBlank(userId) || userId.equalsIgnoreCase(Constants.UNAUTHORIZED_USER)) {
+      return returnErrorMsg(Constants.INVALID_USER, HttpStatus.BAD_REQUEST, response);
+    }
+    String error = validateReportCommentPayload(request);
+    if (StringUtils.isNotBlank(error)) {
+      return returnErrorMsg(error, HttpStatus.BAD_REQUEST, response);
+    }
+    Optional<Comment> fetchedComment = commentRepository.findById(
+        (String) request.get(Constants.COMMENT_ID));
+    if (!fetchedComment.isPresent()) {
+      return returnErrorMsg(Constants.NOT_FOUND, HttpStatus.NOT_FOUND, response);
+    }
+    Comment comment = fetchedComment.get();
+    if (!comment.getStatus().equalsIgnoreCase(Status.ACTIVE.name())) {
+      return returnErrorMsg(Constants.NOT_ACTIVE_STATUS, HttpStatus.NOT_FOUND, response);
+    }
+    ObjectNode commentData = (ObjectNode) comment.getCommentData();
+    commentData.put(Constants.REPORTED_BY, userId);
+    comment.setStatus(Status.SUSPENDED.name().toLowerCase());
+    comment = commentRepository.save(comment);
+    response.setResult(objectMapper.convertValue(comment, Map.class));
+    return response;
+  }
+
+  @Override
+  public ApiResponse deleteReportedComments(Map<String, Object> request, String token) {
+    log.info("CommentServiceImpl:reportComment::inside the method");
+    ApiResponse response = new ApiResponse();
+    response.setResponseCode(HttpStatus.OK);
+    String userId = accessTokenValidator.verifyUserToken(token);
+    if (StringUtils.isBlank(userId) || userId.equalsIgnoreCase(Constants.UNAUTHORIZED_USER)) {
+      return returnErrorMsg(Constants.INVALID_USER, HttpStatus.BAD_REQUEST, response);
+    }
+    String error = validateReportCommentPayload(request);
+    if (StringUtils.isNotBlank(error)) {
+      return returnErrorMsg(error, HttpStatus.BAD_REQUEST, response);
+    }
+    Optional<Comment> fetchedComment = commentRepository.findById(
+        (String) request.get(Constants.COMMENT_ID));
+    if (!fetchedComment.isPresent()) {
+      return returnErrorMsg(Constants.NOT_FOUND, HttpStatus.NOT_FOUND, response);
+    }
+    Comment comment = fetchedComment.get();
+    if (!comment.getStatus().equalsIgnoreCase(Status.SUSPENDED.name())) {
+      return returnErrorMsg(Constants.NOT_SUSPENDED_STATUS, HttpStatus.NOT_FOUND, response);
+    }
+    ObjectNode commentData = (ObjectNode) comment.getCommentData();
+    commentData.put(Constants.DELETED_BY, userId);
+    comment.setStatus(Status.INACTIVE.name().toLowerCase());
+    comment = commentRepository.save(comment);
+    response.setResult(objectMapper.convertValue(comment, Map.class));
+    return response;
+  }
+
+  private String validateReportCommentPayload(Map<String, Object> request) {
+    StringBuffer str = new StringBuffer();
+    List<String> errList = new ArrayList<>();
+
+    if (request.containsKey(Constants.COMMENT_ID) &&
+    StringUtils.isBlank((String) request.get(Constants.COMMENT_ID))){
+      errList.add(Constants.COMMENT_TREE_ID);
+    }
+    if (!errList.isEmpty()) {
+      str.append("Failed Due To Missing Params - ").append(errList).append(".");
+    }
+    return str.toString();
   }
 
   private  ApiResponse returnErrorMsg(String error, HttpStatus type, ApiResponse response){

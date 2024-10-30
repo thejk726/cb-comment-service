@@ -131,4 +131,24 @@ public class CommentController {
     return new ResponseEntity<>(response, response.getResponseCode());
   }
 
+  @PostMapping("/report")
+  public ResponseEntity<?> report(@RequestBody Map<String, Object> request,
+      @RequestHeader(Constants.X_AUTH_TOKEN) String token) {
+    ApiResponse response = commentService.reportComment(request, token);
+    if (response.getResponseCode().equals(HttpStatus.NOT_FOUND) && response.getResult().isEmpty()) {
+      return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+    return new ResponseEntity<>(response, response.getResponseCode());
+  }
+
+  @PostMapping("/delete/reported")
+  public ResponseEntity<?> delete(@RequestBody Map<String, Object> request,
+      @RequestHeader(Constants.X_AUTH_TOKEN) String token) {
+    ApiResponse response = commentService.deleteReportedComments(request, token);
+    if (response.getResponseCode().equals(HttpStatus.NOT_FOUND) && response.getResult().isEmpty()) {
+      return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+    return new ResponseEntity<>(response, response.getResponseCode());
+  }
+
 }

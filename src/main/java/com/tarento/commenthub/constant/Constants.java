@@ -3,6 +3,7 @@ package com.tarento.commenthub.constant;
 public class Constants {
 
 
+
   private Constants() {
 
   }
@@ -102,5 +103,10 @@ public class Constants {
   public static final String SUB = "sub";
   public static final String SHA_256_WITH_RSA = "SHA256withRSA";
   public static final String ACCESS_TOKEN_PUBLICKEY_BASEPATH = "accesstoken.publickey.basepath";
-
+  public static final String INVALID_USER = "Invalid user";
+  public static final String NOT_FOUND = "Not found";
+  public static final String NOT_ACTIVE_STATUS = "Only active coments can be reported";
+  public static final String REPORTED_BY = "reportedBy";
+  public static final String NOT_SUSPENDED_STATUS = "Only reported coments can be deleted by admin";
+  public static final String DELETED_BY = "deletedBy";
 }
