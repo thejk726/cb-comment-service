@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -73,14 +74,15 @@ public class CommentController {
       @PathVariable String commentId,
       @RequestParam(name = "entityType") String entityType,
       @RequestParam(name = "entityId") String entityId,
-      @RequestParam(name = "workflow") String workflow) {
+      @RequestParam(name = "workflow") String workflow,
+      @RequestHeader(Constants.X_AUTH_TOKEN) String token) {
 
     CommentTreeIdentifierDTO commentTreeIdentifierDTO = new CommentTreeIdentifierDTO();
     commentTreeIdentifierDTO.setEntityType(entityType);
     commentTreeIdentifierDTO.setEntityId(entityId);
     commentTreeIdentifierDTO.setWorkflow(workflow);
 
-    return commentService.deleteCommentById(commentId, commentTreeIdentifierDTO);
+    return commentService.deleteCommentById(commentId, commentTreeIdentifierDTO, token);
   }
 
   @PostMapping("/v1/setStatusToResolved")
@@ -126,6 +128,26 @@ public class CommentController {
   @PostMapping("/list")
   public ResponseEntity<?> search(@RequestBody List<String> commentIds) {
     ApiResponse response = commentService.listOfComments(commentIds);
+    return new ResponseEntity<>(response, response.getResponseCode());
+  }
+
+  @PostMapping("/report")
+  public ResponseEntity<?> report(@RequestBody Map<String, Object> request,
+      @RequestHeader(Constants.X_AUTH_TOKEN) String token) {
+    ApiResponse response = commentService.reportComment(request, token);
+    if (response.getResponseCode().equals(HttpStatus.NOT_FOUND) && response.getResult().isEmpty()) {
+      return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+    return new ResponseEntity<>(response, response.getResponseCode());
+  }
+
+  @PostMapping("/delete/reported")
+  public ResponseEntity<?> delete(@RequestBody Map<String, Object> request,
+      @RequestHeader(Constants.X_AUTH_TOKEN) String token) {
+    ApiResponse response = commentService.deleteReportedComments(request, token);
+    if (response.getResponseCode().equals(HttpStatus.NOT_FOUND) && response.getResult().isEmpty()) {
+      return new ResponseEntity<>(response, HttpStatus.OK);
+    }
     return new ResponseEntity<>(response, response.getResponseCode());
   }
 

@@ -104,6 +104,11 @@
 			<artifactId>metrics-core</artifactId>
 			<version>3.0.2</version>
 		</dependency>
+		<dependency>
+			<groupId>org.keycloak</groupId>
+			<artifactId>keycloak-common</artifactId>
+			<version>18.0.0</version>
+		</dependency>
 	</dependencies>
 
 	<build>
