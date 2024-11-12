@@ -482,7 +482,6 @@ public class CommentServiceImpl implements CommentService {
         Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
     List<Comment> comments = commentRepository.findByCommentIdIn(childNodeList, pageable)
         .getContent();
-    // Fetch from db and add fetched comments into redis
     List<Map<String, Object>> userList = new ArrayList<>();
     Set<String> uniqueTaggedUserIds = new HashSet<>();
 // Iterate through each comment to extract tagged users
