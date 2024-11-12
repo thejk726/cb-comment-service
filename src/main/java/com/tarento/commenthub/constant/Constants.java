@@ -109,4 +109,6 @@ public class Constants {
   public static final String REPORTED_BY = "reportedBy";
   public static final String NOT_SUSPENDED_STATUS = "Only reported coments can be deleted by admin";
   public static final String DELETED_BY = "deletedBy";
+  public static final String TAGGED_USERS = "taggedUsers";
+  public static final String USER_PREFIX = "user:" ;
 }
