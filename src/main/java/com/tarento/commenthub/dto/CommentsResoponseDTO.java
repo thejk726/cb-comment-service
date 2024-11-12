@@ -24,6 +24,8 @@ public class CommentsResoponseDTO {
 
   private int commentCount;
 
+  private List<Object> taggedUsers;
+
   public CommentsResoponseDTO(CommentTree commentTree, List<Comment> comments, List<Map<String, Object>> userList) {
     this.commentTree = commentTree;
     this.comments = comments;
@@ -34,5 +36,12 @@ public class CommentsResoponseDTO {
   public CommentsResoponseDTO(List<Comment> comments, List<Map<String, Object>> userList) {
     this.comments = comments;
     this.users = userList;
+  }
+
+  public CommentsResoponseDTO(CommentTree commentTree, List<Comment> comments, List<Map<String, Object>> userList, List<Object> taggedUsers) {
+    this.commentTree = commentTree;
+    this.comments = comments;
+    this.users = userList;
+    this.taggedUsers=taggedUsers;
   }
 }

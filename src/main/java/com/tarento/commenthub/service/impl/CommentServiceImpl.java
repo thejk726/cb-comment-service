@@ -15,6 +15,7 @@ import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.ValidationMessage;
 import com.tarento.commenthub.authentication.util.AccessTokenValidator;
+import com.tarento.commenthub.authentication.util.UserFetchFromredis;
 import com.tarento.commenthub.constant.Constants;
 import com.tarento.commenthub.dto.CommentTreeIdentifierDTO;
 import com.tarento.commenthub.dto.CommentsResoponseDTO;
@@ -36,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -91,6 +93,9 @@ public class CommentServiceImpl implements CommentService {
 
   @Autowired
   private AccessTokenValidator accessTokenValidator;
+
+  @Autowired
+  private UserFetchFromredis userFetchFromredis;
 
   @Override
   public ResponseDTO addFirstCommentToCreateTree(JsonNode payload) {
@@ -190,9 +195,23 @@ public class CommentServiceImpl implements CommentService {
       comments = commentRepository.findByCommentIdInAndStatus(childNodeList,
           Status.ACTIVE.name().toLowerCase());
       List<Map<String, Object>> userList = new ArrayList<>();
-     userList = fetchUsersByCommentData(comments);
+      userList = fetchUsersByCommentData(comments);
+      Set<String> uniqueTaggedUserIds = new HashSet<>();
+// Iterate through each comment to extract tagged users
+      comments.forEach(comment -> {
+        JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
 
-      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree, comments, userList);
+        // Check if taggedUsersNode exists and is an array
+        if (taggedUsersNode != null && taggedUsersNode.isArray()) {
+          // Add each tagged user ID to the set to maintain uniqueness
+          taggedUsersNode.forEach(taggedUser -> uniqueTaggedUserIds.add(taggedUser.asText()));
+        }
+      });
+      List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
+      List<Object> taggedUsers = userFetchFromredis.fetchDataForKeys(taggedUserList);
+      // Collect unique IDs
+      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree, comments,
+          userList, taggedUsers);
       //store it in redis with commentTreeId as key:: TO DO
       Optional.ofNullable(comments)
           .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
@@ -463,11 +482,25 @@ public class CommentServiceImpl implements CommentService {
         Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
     List<Comment> comments = commentRepository.findByCommentIdIn(childNodeList, pageable)
         .getContent();
-    // Fetch from db and add fetched comments into redis
     List<Map<String, Object>> userList = new ArrayList<>();
+    Set<String> uniqueTaggedUserIds = new HashSet<>();
+// Iterate through each comment to extract tagged users
+    comments.forEach(comment -> {
+      JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
+
+      // Check if taggedUsersNode exists and is an array
+      if (taggedUsersNode != null && taggedUsersNode.isArray()) {
+        // Add each tagged user ID to the set to maintain uniqueness
+        taggedUsersNode.forEach(
+            taggedUser -> uniqueTaggedUserIds.add(Constants.USER_PREFIX + taggedUser.asText()));
+      }
+    });
+    List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
+    List<Object> taggedUsers = userFetchFromredis.fetchDataForKeys(taggedUserList);
+    // Collect unique IDs
     userList = fetchUsersByCommentData(comments);
     CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
-        comments, userList);
+        comments, userList, taggedUsers);
     Optional.ofNullable(comments)
         .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
     resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);

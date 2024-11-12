@@ -45,6 +45,12 @@
           },
           "required": ["userId", "userPic", "userRole"],
           "additionalProperties": false
+        },
+        "taggedUsers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": ["comment", "commentSource"],
