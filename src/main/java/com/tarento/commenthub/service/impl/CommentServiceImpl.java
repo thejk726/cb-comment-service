@@ -15,7 +15,7 @@ import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.ValidationMessage;
 import com.tarento.commenthub.authentication.util.AccessTokenValidator;
-import com.tarento.commenthub.authentication.util.UserFetchFromredis;
+import com.tarento.commenthub.authentication.util.FetchUserDetails;
 import com.tarento.commenthub.constant.Constants;
 import com.tarento.commenthub.dto.CommentTreeIdentifierDTO;
 import com.tarento.commenthub.dto.CommentsResoponseDTO;
@@ -95,7 +95,7 @@ public class CommentServiceImpl implements CommentService {
   private AccessTokenValidator accessTokenValidator;
 
   @Autowired
-  private UserFetchFromredis userFetchFromredis;
+  private FetchUserDetails fetchUser;
 
   @Override
   public ResponseDTO addFirstCommentToCreateTree(JsonNode payload) {
@@ -197,6 +197,7 @@ public class CommentServiceImpl implements CommentService {
       List<Map<String, Object>> userList = new ArrayList<>();
       userList = fetchUsersByCommentData(comments);
       Set<String> uniqueTaggedUserIds = new HashSet<>();
+      Set<String> uniqueTaggedUserIdWithoutPrefixs = new HashSet<>();
 // Iterate through each comment to extract tagged users
       comments.forEach(comment -> {
         JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
@@ -204,11 +205,21 @@ public class CommentServiceImpl implements CommentService {
         // Check if taggedUsersNode exists and is an array
         if (taggedUsersNode != null && taggedUsersNode.isArray()) {
           // Add each tagged user ID to the set to maintain uniqueness
-          taggedUsersNode.forEach(taggedUser -> uniqueTaggedUserIds.add(taggedUser.asText()));
+          taggedUsersNode.forEach(taggedUser -> {
+            uniqueTaggedUserIds.add(Constants.USER_PREFIX + taggedUser.asText());
+
+            // Add the tagged user ID without the prefix to uniqueTaggedUserIdWithoutPrefixs
+            uniqueTaggedUserIdWithoutPrefixs.add(taggedUser.asText());
+          });
         }
       });
       List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
-      List<Object> taggedUsers = userFetchFromredis.fetchDataForKeys(taggedUserList);
+      List<String> taggedUserListWithoutPrefix = new ArrayList<>(uniqueTaggedUserIdWithoutPrefixs);
+      List<Object> taggedUsers = fetchUser.fetchDataForKeys(taggedUserList);
+      if (taggedUsers == null || taggedUsers.isEmpty()) {
+        // Handle the case where taggedUsers is empty or null
+        taggedUsers = fetchUser.fetchUserFromprimary(taggedUserListWithoutPrefix);
+      }
       // Collect unique IDs
       CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree, comments,
           userList, taggedUsers);
@@ -484,6 +495,7 @@ public class CommentServiceImpl implements CommentService {
         .getContent();
     List<Map<String, Object>> userList = new ArrayList<>();
     Set<String> uniqueTaggedUserIds = new HashSet<>();
+    Set<String> uniqueTaggedUserIdWithoutPrefixs = new HashSet<>();
 // Iterate through each comment to extract tagged users
     comments.forEach(comment -> {
       JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
@@ -491,12 +503,21 @@ public class CommentServiceImpl implements CommentService {
       // Check if taggedUsersNode exists and is an array
       if (taggedUsersNode != null && taggedUsersNode.isArray()) {
         // Add each tagged user ID to the set to maintain uniqueness
-        taggedUsersNode.forEach(
-            taggedUser -> uniqueTaggedUserIds.add(Constants.USER_PREFIX + taggedUser.asText()));
+        taggedUsersNode.forEach(taggedUser -> {
+          uniqueTaggedUserIds.add(Constants.USER_PREFIX + taggedUser.asText());
+
+          // Add the tagged user ID without the prefix to uniqueTaggedUserIdWithoutPrefixs
+          uniqueTaggedUserIdWithoutPrefixs.add(taggedUser.asText());
+        });
       }
     });
     List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
-    List<Object> taggedUsers = userFetchFromredis.fetchDataForKeys(taggedUserList);
+    List<String> taggedUserListWithoutPrefix = new ArrayList<>(uniqueTaggedUserIdWithoutPrefixs);
+    List<Object> taggedUsers = fetchUser.fetchDataForKeys(taggedUserList);
+    if (taggedUsers == null || taggedUsers.isEmpty()) {
+      // Handle the case where taggedUsers is empty or null
+      taggedUsers = fetchUser.fetchUserFromprimary(taggedUserListWithoutPrefix);
+    }
     // Collect unique IDs
     userList = fetchUsersByCommentData(comments);
     CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
@@ -521,8 +542,31 @@ public class CommentServiceImpl implements CommentService {
     List<Comment> comments = commentRepository.findByCommentIdIn(commentIds, sort);
     List<Map<String, Object>> userList = new ArrayList<>();
     userList = fetchUsersByCommentData(comments);
+    Set<String> uniqueTaggedUserIds = new HashSet<>();
+    Set<String> uniqueTaggedUserIdWithoutPrefixs = new HashSet<>();
+// Iterate through each comment to extract tagged users
+    comments.forEach(comment -> {
+      JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
 
-    CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(comments, userList);
+      // Check if taggedUsersNode exists and is an array
+      if (taggedUsersNode != null) {
+        // Add each tagged user ID to the set to maintain uniqueness
+        taggedUsersNode.forEach(taggedUser -> {
+          uniqueTaggedUserIds.add(Constants.USER_PREFIX + taggedUser.asText());
+
+          // Add the tagged user ID without the prefix to uniqueTaggedUserIdWithoutPrefixs
+          uniqueTaggedUserIdWithoutPrefixs.add(taggedUser.asText());
+        });
+      }
+    });
+    List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
+    List<String> taggedUserListWithoutPrefix = new ArrayList<>(uniqueTaggedUserIdWithoutPrefixs);
+    List<Object> taggedUsers = fetchUser.fetchDataForKeys(taggedUserList);
+    if (taggedUsers == null || taggedUsers.isEmpty()) {
+      // Handle the case where taggedUsers is empty or null
+      taggedUsers = fetchUser.fetchUserFromprimary(taggedUserListWithoutPrefix);
+    }
+    CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(comments, userList, taggedUsers);
     //store it in redis with commentTreeId as key:: TO DO
     Optional.ofNullable(comments)
         .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
@@ -711,7 +755,7 @@ public class CommentServiceImpl implements CommentService {
 
           // Process profile details if present
           String profileDetails = (String) userInfo.get(Constants.PROFILE_DETAILS);
-          if (StringUtils.isNotEmpty(profileDetails)) {
+          if (StringUtils.isNotBlank(profileDetails)) {
             try {
               // Convert JSON profile details to a Map
               Map<String, Object> profileDetailsMap = objectMapper.readValue(profileDetails,
@@ -747,5 +791,6 @@ public class CommentServiceImpl implements CommentService {
       }
     return "";
   }
+
 
 }

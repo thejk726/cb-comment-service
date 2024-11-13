@@ -111,4 +111,11 @@ public class Constants {
   public static final String DELETED_BY = "deletedBy";
   public static final String TAGGED_USERS = "taggedUsers";
   public static final String USER_PREFIX = "user:" ;
+  public static final String USER_ID_KEY = "user_id";
+  public static final String FIRST_NAME_KEY = "first_name";
+  public static final String PROFILE_IMG_KEY = "user_profile_img_url";
+  public static final String DESIGNATION_KEY = "designation";
+  public static final String DEPARTMENT_KEY = "departmentName";
+  public static final String EMPLOYMENT_DETAILS = "employmentDetails";
+  public static final String DEPARTMENT = "department";
 }
