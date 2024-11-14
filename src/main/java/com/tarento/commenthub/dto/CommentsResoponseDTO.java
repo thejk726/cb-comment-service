@@ -44,4 +44,10 @@ public class CommentsResoponseDTO {
     this.users = userList;
     this.taggedUsers=taggedUsers;
   }
+
+  public CommentsResoponseDTO(List<Comment> comments, List<Map<String, Object>> userList, List<Object> taggedUsers) {
+    this.comments = comments;
+    this.users = userList;
+    this.taggedUsers=taggedUsers;
+  }
 }
