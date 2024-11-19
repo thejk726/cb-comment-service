@@ -38,6 +38,12 @@
             },
             "userRole": {
               "type": "string"
+            },
+            "designation": {
+              "type": "string"
+            },
+            "profileStatus": {
+              "type": "string"
             }
           },
           "required": ["userId", "userPic", "userRole"],
