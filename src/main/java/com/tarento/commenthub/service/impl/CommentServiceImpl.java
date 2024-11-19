@@ -340,41 +340,49 @@ public class CommentServiceImpl implements CommentService {
       List<Map<String, Object>> records = cassandraOperation.getRecordsByPropertiesWithoutFiltering(
           Constants.KEYSPACE_SUNBIRD, "comment_likes", propertyMap,
           Collections.singletonList("flag"), null);
+      Map<String, Object> map = new HashMap<>();
+      map.put(Constants.FLAG, likePayload.get(Constants.FLAG));
+      Map<String, Object> compositeKey = new HashMap<>();
+      compositeKey.put(Constants.COMMENT_ID, commentId);
+      compositeKey.put(Constants.USERID, userId);
       if (!records.isEmpty()) {
         String record = (String) records.get(0).get(Constants.FLAG);
         if (record.equals(likePayload.get(Constants.FLAG))) {
-          response.setResponseCode(HttpStatus.BAD_REQUEST);
-          response.getParams()
-              .setErr("Already given " + likePayload.get(Constants.FLAG) + " for this comment");
-          return response;
-        }
-        Map<String, Object> map = new HashMap<>();
-        map.put(Constants.FLAG, likePayload.get(Constants.FLAG));
-        Map<String, Object> compositeKey = new HashMap<>();
-        compositeKey.put(Constants.COMMENT_ID, commentId);
-        compositeKey.put(Constants.USERID, userId);
-        cassandraOperation.updateRecordByCompositeKey(Constants.KEYSPACE_SUNBIRD, "comment_likes",
-            map, compositeKey);
-        if (commentData.has((String) likePayload.get(Constants.FLAG))) {
-          Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG)).asLong();
-          ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG),
-              incrementCount + 1);
+          cassandraOperation.deleteRecord(Constants.KEYSPACE_SUNBIRD, Constants.COMMENT_LIKE_TABLE,
+              compositeKey);
+          Comment commentToBeUpdated = optComment.get();
+          if (commentData.has((String) likePayload.get(Constants.FLAG))) {
+            Long decrementCount = commentData.get((String) likePayload.get(Constants.FLAG))
+                .asLong();
+            ((ObjectNode) commentData).put(record, decrementCount - 1);
+          }
+          commentToBeUpdated.setCommentData(commentData);
+          commentRepository.save(commentToBeUpdated);
+
         } else {
-          ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG), 1);
-        }
-        if (commentData.has(record)) {
-          Long decrementCount = commentData.get(record).asLong();
-          ((ObjectNode) commentData).put(record, decrementCount - 1);
-        }
-        Comment commentToBeUpdated = optComment.get();
-        commentToBeUpdated.setCommentData(commentData);
-        Comment updatedComment = commentRepository.save(commentToBeUpdated);
-        if (likePayload.containsKey(likePayload.get(Constants.COMMENT_TREE_ID))
-            && StringUtils.isBlank((String) likePayload.get(Constants.COMMENT_TREE_ID))
-            && likePayload.get(Constants.COMMENT_TREE_ID) != null) {
-          deleteRedisKey(
-              generateRedisJwtTokenKey((String) likePayload.get(Constants.COMMENT_TREE_ID),
-                  defaultOffset, defaultLimit));
+          cassandraOperation.updateRecordByCompositeKey(Constants.KEYSPACE_SUNBIRD, "comment_likes",
+              map, compositeKey);
+          if (commentData.has((String) likePayload.get(Constants.FLAG))) {
+            Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG)).asLong();
+            ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG),
+                incrementCount + 1);
+          } else {
+            ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG), 1);
+          }
+          if (commentData.has(record)) {
+            Long decrementCount = commentData.get(record).asLong();
+            ((ObjectNode) commentData).put(record, decrementCount - 1);
+          }
+          Comment commentToBeUpdated = optComment.get();
+          commentToBeUpdated.setCommentData(commentData);
+          Comment updatedComment = commentRepository.save(commentToBeUpdated);
+          if (likePayload.containsKey(likePayload.get(Constants.COMMENT_TREE_ID))
+              && StringUtils.isBlank((String) likePayload.get(Constants.COMMENT_TREE_ID))
+              && likePayload.get(Constants.COMMENT_TREE_ID) != null) {
+            deleteRedisKey(
+                generateRedisJwtTokenKey((String) likePayload.get(Constants.COMMENT_TREE_ID),
+                    defaultOffset, defaultLimit));
+          }
         }
       } else {
         propertyMap.put(Constants.FLAG, likePayload.get(Constants.FLAG));
