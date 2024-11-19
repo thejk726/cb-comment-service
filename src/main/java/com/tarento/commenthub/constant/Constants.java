@@ -120,4 +120,6 @@ public class Constants {
   public static final String DEPARTMENT = "department";
   public static final String EXCEPTION_MSG_DELETE = "Exception occurred while deleting record from ";
   public static final String COMMENT_LIKE_TABLE = "comment_likes";
+  public static final String REPORTED_REASON = "reportedDueTo";
+  public static final String OTHER_REASON = "otherReasons";
 }

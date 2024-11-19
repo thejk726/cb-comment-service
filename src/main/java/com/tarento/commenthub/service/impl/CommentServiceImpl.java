@@ -610,6 +610,19 @@ public class CommentServiceImpl implements CommentService {
     }
     ObjectNode commentData = (ObjectNode) comment.getCommentData();
     commentData.put(Constants.REPORTED_BY, userId);
+    commentData.put(Constants.REPORTED_REASON,
+        objectMapper.valueToTree(request.get(Constants.REPORTED_REASON)));
+    if (request.containsKey(Constants.REPORTED_REASON) &&
+        request.get(Constants.REPORTED_REASON) instanceof List) {
+      List<String> reportedReasonList = (List<String>) request.get(Constants.REPORTED_REASON);
+
+      if (reportedReasonList.contains("Others") && request.containsKey(Constants.OTHER_REASON)) {
+        String otherReason = (String) request.get(Constants.OTHER_REASON);
+        if (!StringUtils.isBlank(otherReason)) {
+          commentData.put(Constants.OTHER_REASON, otherReason);
+        }
+      }
+    }
     comment.setStatus(Status.SUSPENDED.name().toLowerCase());
     comment = commentRepository.save(comment);
     response.setResult(objectMapper.convertValue(comment, Map.class));
@@ -652,7 +665,28 @@ public class CommentServiceImpl implements CommentService {
 
     if (request.containsKey(Constants.COMMENT_ID) &&
     StringUtils.isBlank((String) request.get(Constants.COMMENT_ID))){
-      errList.add(Constants.COMMENT_TREE_ID);
+      errList.add(Constants.COMMENT_ID);
+    }
+    // Check if REPORTED_REASON is a list of strings
+    if (request.containsKey(Constants.REPORTED_REASON)) {
+      Object reportedReasonObj = request.get(Constants.REPORTED_REASON);
+      // Check if REPORTED_REASON is a list of strings
+      if (reportedReasonObj instanceof List) {
+        List<String> reportedReasonList = (List<String>) reportedReasonObj;
+        // Check if the list is empty
+        if (reportedReasonList.isEmpty()) {
+          errList.add(Constants.REPORTED_REASON);
+        } else if (reportedReasonList.contains("Others")) {
+          // Check if OTHER_REASON is provided
+          if (!request.containsKey(Constants.OTHER_REASON) ||
+              StringUtils.isBlank((String) request.get(Constants.OTHER_REASON))) {
+            errList.add(Constants.OTHER_REASON);
+          }
+        }
+      } else {
+        // If REPORTED_REASON is not a list, add an error
+        errList.add(Constants.REPORTED_REASON);
+      }
     }
     if (!errList.isEmpty()) {
       str.append("Failed Due To Missing Params - ").append(errList).append(".");
