@@ -28,4 +28,6 @@ public class SearchCriteria {
 
   private boolean overrideCache;
 
+  private boolean enrichedUser;
+
 }

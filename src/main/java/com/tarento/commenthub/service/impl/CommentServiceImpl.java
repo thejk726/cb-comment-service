@@ -464,7 +464,7 @@ public class CommentServiceImpl implements CommentService {
       resultMap = (Map<String, Object>) redisTemplate.opsForValue()
           .get(generateRedisJwtTokenKey(commentTreeId, offset, limit));
     } else {
-      resultMap = fetchCommentFromPrimary(offset, limit, childNodeList, commentTree.get());
+      resultMap = fetchCommentFromPrimary(offset, limit, childNodeList, commentTree.get(), searchCriteria.isEnrichedUser());
       redisTemplate.opsForValue()
           .set(generateRedisJwtTokenKey(commentTreeId, offset, limit), resultMap, redisTtl,
               TimeUnit.SECONDS);
@@ -473,7 +473,7 @@ public class CommentServiceImpl implements CommentService {
     }
     if (MapUtils.isEmpty(resultMap)) {
       log.info("CommentServiceImpl::getComments::fetch Comments from postgres");
-      resultMap = fetchCommentFromPrimary(offset, limit, childNodeList, commentTree.get());
+      resultMap = fetchCommentFromPrimary(offset, limit, childNodeList, commentTree.get(), searchCriteria.isEnrichedUser());
       redisTemplate.opsForValue()
           .set(generateRedisJwtTokenKey(commentTreeId, offset, limit), resultMap, redisTtl,
               TimeUnit.SECONDS);
@@ -487,7 +487,7 @@ public class CommentServiceImpl implements CommentService {
   }
 
   private Map<String, Object> fetchCommentFromPrimary(int offset, int limit,
-      List<String> childNodeList, CommentTree commentTree) {
+      List<String> childNodeList, CommentTree commentTree, boolean isUserEnriched) {
     Map<String, Object> resultMap = new HashMap<>();
     Pageable pageable = PageRequest.of(offset, limit,
         Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
@@ -519,7 +519,9 @@ public class CommentServiceImpl implements CommentService {
       taggedUsers = fetchUser.fetchUserFromprimary(taggedUserListWithoutPrefix);
     }
     // Collect unique IDs
-    userList = fetchUsersByCommentData(comments);
+    if (isUserEnriched){
+      userList = fetchUsersByCommentData(comments);
+    }
     CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
         comments, userList, taggedUsers);
     Optional.ofNullable(comments)
