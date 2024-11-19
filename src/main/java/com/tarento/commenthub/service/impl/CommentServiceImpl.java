@@ -619,7 +619,6 @@ public class CommentServiceImpl implements CommentService {
       if (reportedReasonList.contains("Others") && request.containsKey(Constants.OTHER_REASON)) {
         String otherReason = (String) request.get(Constants.OTHER_REASON);
         if (!StringUtils.isBlank(otherReason)) {
-          // Store the other reason provided by the user
           commentData.put(Constants.OTHER_REASON, otherReason);
         }
       }
