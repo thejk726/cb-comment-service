@@ -332,7 +332,7 @@ public class CommentServiceImpl implements CommentService {
     }
     Optional<Comment> optComment = commentRepository.findById(
         (String) likePayload.get(Constants.COMMENT_ID));
-    if (!optComment.isPresent()) {
+    if (!optComment.isPresent() && optComment.get().getCommentData().isEmpty()) {
       response.setResponseCode(HttpStatus.BAD_REQUEST);
       response.getParams().setErr(error);
       return response;
@@ -354,7 +354,8 @@ public class CommentServiceImpl implements CommentService {
           // Update the record in the database
           existingRecord.setCommentIds(alreadyLikedComments);
           userCommentLikeRepository.save(existingRecord);
-          if (commentData.has((String) likePayload.get(Constants.FLAG))) {
+          if (commentData.has((String) likePayload.get(Constants.FLAG))
+              && commentData.get((String) likePayload.get(Constants.FLAG)).asLong() > 0) {
             Long decrementCount = commentData.get((String) likePayload.get(Constants.FLAG))
                 .asLong();
             ((ObjectNode) commentData).put(Constants.LIKE, decrementCount - 1);
@@ -365,7 +366,8 @@ public class CommentServiceImpl implements CommentService {
           // Update the record in the database
           existingRecord.setCommentIds(alreadyLikedComments);
           userCommentLikeRepository.save(existingRecord);
-          if (commentData.has((String) likePayload.get(Constants.FLAG))) {
+          if (commentData.has((String) likePayload.get(Constants.FLAG))
+              && commentData.get((String) likePayload.get(Constants.FLAG)).asLong() > 0) {
             Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG))
                 .asLong();
             ((ObjectNode) commentData).put(Constants.LIKE, incrementCount + 1);
@@ -380,7 +382,8 @@ public class CommentServiceImpl implements CommentService {
         commentIds.add(commentId);  // Add the commentId directly (as String)
         newRecord.setCommentIds(commentIds);
         userCommentLikeRepository.save(newRecord);
-        if (commentData.has((String) likePayload.get(Constants.FLAG))) {
+        if (commentData.has((String) likePayload.get(Constants.FLAG))
+            && commentData.get((String) likePayload.get(Constants.FLAG)).asLong() > 0) {
           Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG))
               .asLong();
           ((ObjectNode) commentData).put(Constants.LIKE, incrementCount + 1);
@@ -653,7 +656,7 @@ public class CommentServiceImpl implements CommentService {
     if (StringUtils.isBlank(userId) || userId.equalsIgnoreCase(Constants.UNAUTHORIZED_USER)) {
       return returnErrorMsg(Constants.INVALID_USER, HttpStatus.BAD_REQUEST, response);
     }
-    if(StringUtils.isBlank(courseId)){
+    if (StringUtils.isBlank(courseId)) {
       return returnErrorMsg(Constants.EMPTY_COURSEID, HttpStatus.BAD_REQUEST, response);
     }
     UserCourseCommentsId id = new UserCourseCommentsId(userId, courseId);
