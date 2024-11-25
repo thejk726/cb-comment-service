@@ -37,4 +37,6 @@ public interface CommentService {
   ApiResponse reportComment(Map<String, Object> request, String token);
 
   ApiResponse deleteReportedComments(Map<String, Object> request, String token);
+
+  ApiResponse getCommentsLikedByUser(String courseId, String token);
 }
