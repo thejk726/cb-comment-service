@@ -359,6 +359,8 @@ public class CommentServiceImpl implements CommentService {
             Long decrementCount = commentData.get((String) likePayload.get(Constants.FLAG))
                 .asLong();
             ((ObjectNode) commentData).put(Constants.LIKE, decrementCount - 1);
+          } else {
+            ((ObjectNode) commentData).put(Constants.LIKE, 1);
           }
         } else {
           // Add the commentId if it is not already liked
@@ -371,6 +373,8 @@ public class CommentServiceImpl implements CommentService {
             Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG))
                 .asLong();
             ((ObjectNode) commentData).put(Constants.LIKE, incrementCount + 1);
+          } else {
+            ((ObjectNode) commentData).put(Constants.LIKE, 1);
           }
         }
       } else {
