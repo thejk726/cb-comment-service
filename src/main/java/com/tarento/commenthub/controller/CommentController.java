@@ -151,4 +151,10 @@ public class CommentController {
     return new ResponseEntity<>(response, response.getResponseCode());
   }
 
+  @GetMapping("/v1/likedComments")
+  public ResponseEntity getCommentsLikedByUser(@RequestParam String courseId, @RequestHeader(Constants.X_AUTH_TOKEN) String token) {
+    ApiResponse response = commentService.getCommentsLikedByUser(courseId, token);
+    return new ResponseEntity<>(response, response.getResponseCode());
+  }
+
 }
