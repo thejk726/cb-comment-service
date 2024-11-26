@@ -38,6 +38,12 @@
             },
             "userRole": {
               "type": "string"
+            },
+            "designation": {
+              "type": "string"
+            },
+            "profileStatus": {
+              "type": "string"
             }
           },
           "required": ["userId", "userPic", "userRole"],
@@ -46,6 +52,12 @@
         "commentResolved": {
           "type": "string",
           "minLength": 1
+        },
+        "taggedUsers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       },
       "required": ["comment", "commentSource", "commentResolved"],

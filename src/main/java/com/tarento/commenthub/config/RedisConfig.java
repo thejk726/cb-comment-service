@@ -20,5 +20,15 @@ public class RedisConfig {
     return redisTemplate;
   }
 
+  // Bean for RedisTemplate<String, Object>
+  @Bean
+  public RedisTemplate<String, Object> redisTemplateObject(RedisConnectionFactory connectionFactory) {
+    RedisTemplate<String, Object> redisTemplate = new RedisTemplate<>();
+    redisTemplate.setConnectionFactory(connectionFactory);
+    redisTemplate.setKeySerializer(new StringRedisSerializer());
+    redisTemplate.setValueSerializer(new StringRedisSerializer()); // Configure as needed for Object
+    return redisTemplate;
+  }
+
 }
 

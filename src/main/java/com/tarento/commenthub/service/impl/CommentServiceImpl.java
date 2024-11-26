@@ -15,16 +15,20 @@ import com.networknt.schema.JsonSchema;
 import com.networknt.schema.JsonSchemaFactory;
 import com.networknt.schema.ValidationMessage;
 import com.tarento.commenthub.authentication.util.AccessTokenValidator;
+import com.tarento.commenthub.authentication.util.FetchUserDetails;
 import com.tarento.commenthub.constant.Constants;
 import com.tarento.commenthub.dto.CommentTreeIdentifierDTO;
 import com.tarento.commenthub.dto.CommentsResoponseDTO;
 import com.tarento.commenthub.dto.ResponseDTO;
 import com.tarento.commenthub.dto.SearchCriteria;
+import com.tarento.commenthub.dto.UserCourseCommentsId;
 import com.tarento.commenthub.entity.Comment;
 import com.tarento.commenthub.entity.CommentTree;
+import com.tarento.commenthub.entity.UserCourseCommentLike;
 import com.tarento.commenthub.exception.CommentException;
 import com.tarento.commenthub.repository.CommentRepository;
 import com.tarento.commenthub.repository.CommentTreeRepository;
+import com.tarento.commenthub.repository.UserCommentLikeRepository;
 import com.tarento.commenthub.service.CommentService;
 import com.tarento.commenthub.service.CommentTreeService;
 import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
@@ -36,6 +40,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -43,6 +48,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.collections4.MapUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -91,6 +97,12 @@ public class CommentServiceImpl implements CommentService {
 
   @Autowired
   private AccessTokenValidator accessTokenValidator;
+
+  @Autowired
+  private FetchUserDetails fetchUser;
+
+  @Autowired
+  private UserCommentLikeRepository userCommentLikeRepository;
 
   @Override
   public ResponseDTO addFirstCommentToCreateTree(JsonNode payload) {
@@ -190,9 +202,34 @@ public class CommentServiceImpl implements CommentService {
       comments = commentRepository.findByCommentIdInAndStatus(childNodeList,
           Status.ACTIVE.name().toLowerCase());
       List<Map<String, Object>> userList = new ArrayList<>();
-     userList = fetchUsersByCommentData(comments);
+      userList = fetchUsersByCommentData(comments);
+      Set<String> uniqueTaggedUserIds = new HashSet<>();
+      Set<String> uniqueTaggedUserIdWithoutPrefixs = new HashSet<>();
+// Iterate through each comment to extract tagged users
+      comments.forEach(comment -> {
+        JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
 
-      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree, comments, userList);
+        // Check if taggedUsersNode exists and is an array
+        if (taggedUsersNode != null && taggedUsersNode.isArray()) {
+          // Add each tagged user ID to the set to maintain uniqueness
+          taggedUsersNode.forEach(taggedUser -> {
+            uniqueTaggedUserIds.add(Constants.USER_PREFIX + taggedUser.asText());
+
+            // Add the tagged user ID without the prefix to uniqueTaggedUserIdWithoutPrefixs
+            uniqueTaggedUserIdWithoutPrefixs.add(taggedUser.asText());
+          });
+        }
+      });
+      List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
+      List<String> taggedUserListWithoutPrefix = new ArrayList<>(uniqueTaggedUserIdWithoutPrefixs);
+      List<Object> taggedUsers = fetchUser.fetchDataForKeys(taggedUserList);
+      if (taggedUsers == null || taggedUsers.isEmpty()) {
+        // Handle the case where taggedUsers is empty or null
+        taggedUsers = fetchUser.fetchUserFromprimary(taggedUserListWithoutPrefix);
+      }
+      // Collect unique IDs
+      CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree, comments,
+          userList, taggedUsers);
       //store it in redis with commentTreeId as key:: TO DO
       Optional.ofNullable(comments)
           .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
@@ -295,87 +332,80 @@ public class CommentServiceImpl implements CommentService {
     }
     Optional<Comment> optComment = commentRepository.findById(
         (String) likePayload.get(Constants.COMMENT_ID));
-    if (!optComment.isPresent()) {
+    if (!optComment.isPresent() && optComment.get().getCommentData().isEmpty()) {
       response.setResponseCode(HttpStatus.BAD_REQUEST);
       response.getParams().setErr(error);
       return response;
     }
-    JsonNode commentData = optComment.get().getCommentData();
     try {
       String commentId = (String) likePayload.get(Constants.COMMENT_ID);
       String userId = (String) likePayload.get(Constants.USERID);
-      Map<String, Object> propertyMap = new HashMap<>();
-      propertyMap.put(Constants.COMMENT_ID, commentId);
-      propertyMap.put(Constants.USERID, userId);
-      List<Map<String, Object>> records = cassandraOperation.getRecordsByPropertiesWithoutFiltering(
-          Constants.KEYSPACE_SUNBIRD, "comment_likes", propertyMap,
-          Collections.singletonList("flag"), null);
-      if (!records.isEmpty()) {
-        String record = (String) records.get(0).get(Constants.FLAG);
-        if (record.equals(likePayload.get(Constants.FLAG))) {
-          response.setResponseCode(HttpStatus.BAD_REQUEST);
-          response.getParams()
-              .setErr("Already given " + likePayload.get(Constants.FLAG) + " for this comment");
-          return response;
-        }
-        Map<String, Object> map = new HashMap<>();
-        map.put(Constants.FLAG, likePayload.get(Constants.FLAG));
-        Map<String, Object> compositeKey = new HashMap<>();
-        compositeKey.put(Constants.COMMENT_ID, commentId);
-        compositeKey.put(Constants.USERID, userId);
-        cassandraOperation.updateRecordByCompositeKey(Constants.KEYSPACE_SUNBIRD, "comment_likes",
-            map, compositeKey);
-        if (commentData.has((String) likePayload.get(Constants.FLAG))) {
-          Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG)).asLong();
-          ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG),
-              incrementCount + 1);
+      String courseId = (String) likePayload.get(Constants.COURSEID);
+      UserCourseCommentsId id = new UserCourseCommentsId(userId, courseId);
+      Optional<UserCourseCommentLike> records = userCommentLikeRepository.findById(id);
+      JsonNode commentData = optComment.get().getCommentData();
+      if (records.isPresent() && !records.get().getCommentIds().isEmpty()) {
+        UserCourseCommentLike existingRecord = records.get();
+        List<String> alreadyLikedComments = existingRecord.getCommentIds();
+
+        if (alreadyLikedComments.contains(commentId)) {
+          // Remove the commentId if it is already liked
+          alreadyLikedComments.remove(commentId);
+          // Update the record in the database
+          existingRecord.setCommentIds(alreadyLikedComments);
+          userCommentLikeRepository.save(existingRecord);
+          if (commentData.has((String) likePayload.get(Constants.FLAG))
+              && commentData.get((String) likePayload.get(Constants.FLAG)).asLong() > 0) {
+            Long decrementCount = commentData.get((String) likePayload.get(Constants.FLAG))
+                .asLong();
+            ((ObjectNode) commentData).put(Constants.LIKE, decrementCount - 1);
+          } else {
+            ((ObjectNode) commentData).put(Constants.LIKE, 1);
+          }
         } else {
-          ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG), 1);
-        }
-        if (commentData.has(record)) {
-          Long decrementCount = commentData.get(record).asLong();
-          ((ObjectNode) commentData).put(record, decrementCount - 1);
-        }
-        Comment commentToBeUpdated = optComment.get();
-        commentToBeUpdated.setCommentData(commentData);
-        Comment updatedComment = commentRepository.save(commentToBeUpdated);
-        if (likePayload.containsKey(likePayload.get(Constants.COMMENT_TREE_ID))
-            && StringUtils.isBlank((String) likePayload.get(Constants.COMMENT_TREE_ID))
-            && likePayload.get(Constants.COMMENT_TREE_ID) != null) {
-          deleteRedisKey(
-              generateRedisJwtTokenKey((String) likePayload.get(Constants.COMMENT_TREE_ID),
-                  defaultOffset, defaultLimit));
+          // Add the commentId if it is not already liked
+          alreadyLikedComments.add(commentId); // Add the commentId (already String)
+          // Update the record in the database
+          existingRecord.setCommentIds(alreadyLikedComments);
+          userCommentLikeRepository.save(existingRecord);
+          if (commentData.has((String) likePayload.get(Constants.FLAG))
+              && commentData.get((String) likePayload.get(Constants.FLAG)).asLong() > 0) {
+            Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG))
+                .asLong();
+            ((ObjectNode) commentData).put(Constants.LIKE, incrementCount + 1);
+          } else {
+            ((ObjectNode) commentData).put(Constants.LIKE, 1);
+          }
         }
       } else {
-        propertyMap.put(Constants.FLAG, likePayload.get(Constants.FLAG));
-        cassandraOperation.insertRecord(Constants.KEYSPACE_SUNBIRD, "comment_likes", propertyMap);
-        if (commentData.has((String) likePayload.get(Constants.FLAG))) {
-          Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG)).asLong();
-          ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG),
-              incrementCount + 1);
+        // If no existing record found, create a new one with the commentId
+        UserCourseCommentLike newRecord = new UserCourseCommentLike();
+        newRecord.setId(id);
+        // Ensure that commentId is wrapped in a List<UUID>
+        List<String> commentIds = new ArrayList<>();
+        commentIds.add(commentId);  // Add the commentId directly (as String)
+        newRecord.setCommentIds(commentIds);
+        userCommentLikeRepository.save(newRecord);
+        if (commentData.has((String) likePayload.get(Constants.FLAG))
+            && commentData.get((String) likePayload.get(Constants.FLAG)).asLong() > 0) {
+          Long incrementCount = commentData.get((String) likePayload.get(Constants.FLAG))
+              .asLong();
+          ((ObjectNode) commentData).put(Constants.LIKE, incrementCount + 1);
         } else {
-          ((ObjectNode) commentData).put((String) likePayload.get(Constants.FLAG), 1);
-        }
-        Comment commentToBeUpdated = optComment.get();
-        commentToBeUpdated.setCommentData(commentData);
-        Comment updatedComment = commentRepository.save(commentToBeUpdated);
-        if (likePayload.containsKey(likePayload.get(Constants.COMMENT_TREE_ID))
-            && StringUtils.isBlank((String) likePayload.get(Constants.COMMENT_TREE_ID))
-            && likePayload.get(Constants.COMMENT_TREE_ID) != null) {
-          deleteRedisKey(
-              generateRedisJwtTokenKey((String) likePayload.get(Constants.COMMENT_TREE_ID),
-                  defaultOffset, defaultLimit));
+          ((ObjectNode) commentData).put(Constants.LIKE, 1);
         }
       }
+      Comment commentToBeUpdated = optComment.get();
+      commentToBeUpdated.setCommentData(commentData);
+      commentRepository.save(commentToBeUpdated);
+      return response;
     } catch (Exception e) {
-      response.setResponseCode(HttpStatus.INTERNAL_SERVER_ERROR);
-      response.getParams().setErr(e.getMessage());
-      log.error(e.getMessage());
+      log.error("error occured while liking a comment::" + String.valueOf(e));
+      throw new RuntimeException(e);
     }
-    return response;
   }
 
-  //need to write a method to fetch all the likes and dilikes of a  coment
+    //need to write a method to fetch all the likes and dilikes of a  coment
   @Override
   public ApiResponse getCommentLike(String commentId, String userId) {
     ApiResponse response = new ApiResponse();
@@ -434,7 +464,7 @@ public class CommentServiceImpl implements CommentService {
       resultMap = (Map<String, Object>) redisTemplate.opsForValue()
           .get(generateRedisJwtTokenKey(commentTreeId, offset, limit));
     } else {
-      resultMap = fetchCommentFromPrimary(offset, limit, childNodeList, commentTree.get());
+      resultMap = fetchCommentFromPrimary(offset, limit, childNodeList, commentTree.get(), searchCriteria.isEnrichedUser());
       redisTemplate.opsForValue()
           .set(generateRedisJwtTokenKey(commentTreeId, offset, limit), resultMap, redisTtl,
               TimeUnit.SECONDS);
@@ -443,7 +473,7 @@ public class CommentServiceImpl implements CommentService {
     }
     if (MapUtils.isEmpty(resultMap)) {
       log.info("CommentServiceImpl::getComments::fetch Comments from postgres");
-      resultMap = fetchCommentFromPrimary(offset, limit, childNodeList, commentTree.get());
+      resultMap = fetchCommentFromPrimary(offset, limit, childNodeList, commentTree.get(), searchCriteria.isEnrichedUser());
       redisTemplate.opsForValue()
           .set(generateRedisJwtTokenKey(commentTreeId, offset, limit), resultMap, redisTtl,
               TimeUnit.SECONDS);
@@ -457,17 +487,43 @@ public class CommentServiceImpl implements CommentService {
   }
 
   private Map<String, Object> fetchCommentFromPrimary(int offset, int limit,
-      List<String> childNodeList, CommentTree commentTree) {
+      List<String> childNodeList, CommentTree commentTree, boolean isUserEnriched) {
     Map<String, Object> resultMap = new HashMap<>();
     Pageable pageable = PageRequest.of(offset, limit,
         Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
     List<Comment> comments = commentRepository.findByCommentIdIn(childNodeList, pageable)
         .getContent();
-    // Fetch from db and add fetched comments into redis
     List<Map<String, Object>> userList = new ArrayList<>();
-    userList = fetchUsersByCommentData(comments);
+    Set<String> uniqueTaggedUserIds = new HashSet<>();
+    Set<String> uniqueTaggedUserIdWithoutPrefixs = new HashSet<>();
+// Iterate through each comment to extract tagged users
+    comments.forEach(comment -> {
+      JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
+
+      // Check if taggedUsersNode exists and is an array
+      if (taggedUsersNode != null && taggedUsersNode.isArray()) {
+        // Add each tagged user ID to the set to maintain uniqueness
+        taggedUsersNode.forEach(taggedUser -> {
+          uniqueTaggedUserIds.add(Constants.USER_PREFIX + taggedUser.asText());
+
+          // Add the tagged user ID without the prefix to uniqueTaggedUserIdWithoutPrefixs
+          uniqueTaggedUserIdWithoutPrefixs.add(taggedUser.asText());
+        });
+      }
+    });
+    List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
+    List<String> taggedUserListWithoutPrefix = new ArrayList<>(uniqueTaggedUserIdWithoutPrefixs);
+    List<Object> taggedUsers = fetchUser.fetchDataForKeys(taggedUserList);
+    if (taggedUsers == null || taggedUsers.isEmpty()) {
+      // Handle the case where taggedUsers is empty or null
+      taggedUsers = fetchUser.fetchUserFromprimary(taggedUserListWithoutPrefix);
+    }
+    // Collect unique IDs
+    if (isUserEnriched){
+      userList = fetchUsersByCommentData(comments);
+    }
     CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
-        comments, userList);
+        comments, userList, taggedUsers);
     Optional.ofNullable(comments)
         .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
     resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
@@ -488,8 +544,31 @@ public class CommentServiceImpl implements CommentService {
     List<Comment> comments = commentRepository.findByCommentIdIn(commentIds, sort);
     List<Map<String, Object>> userList = new ArrayList<>();
     userList = fetchUsersByCommentData(comments);
+    Set<String> uniqueTaggedUserIds = new HashSet<>();
+    Set<String> uniqueTaggedUserIdWithoutPrefixs = new HashSet<>();
+// Iterate through each comment to extract tagged users
+    comments.forEach(comment -> {
+      JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
 
-    CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(comments, userList);
+      // Check if taggedUsersNode exists and is an array
+      if (taggedUsersNode != null) {
+        // Add each tagged user ID to the set to maintain uniqueness
+        taggedUsersNode.forEach(taggedUser -> {
+          uniqueTaggedUserIds.add(Constants.USER_PREFIX + taggedUser.asText());
+
+          // Add the tagged user ID without the prefix to uniqueTaggedUserIdWithoutPrefixs
+          uniqueTaggedUserIdWithoutPrefixs.add(taggedUser.asText());
+        });
+      }
+    });
+    List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
+    List<String> taggedUserListWithoutPrefix = new ArrayList<>(uniqueTaggedUserIdWithoutPrefixs);
+    List<Object> taggedUsers = fetchUser.fetchDataForKeys(taggedUserList);
+    if (taggedUsers == null || taggedUsers.isEmpty()) {
+      // Handle the case where taggedUsers is empty or null
+      taggedUsers = fetchUser.fetchUserFromprimary(taggedUserListWithoutPrefix);
+    }
+    CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(comments, userList, taggedUsers);
     //store it in redis with commentTreeId as key:: TO DO
     Optional.ofNullable(comments)
         .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(commentsList.size()));
@@ -523,6 +602,19 @@ public class CommentServiceImpl implements CommentService {
     }
     ObjectNode commentData = (ObjectNode) comment.getCommentData();
     commentData.put(Constants.REPORTED_BY, userId);
+    commentData.put(Constants.REPORTED_REASON,
+        objectMapper.valueToTree(request.get(Constants.REPORTED_REASON)));
+    if (request.containsKey(Constants.REPORTED_REASON) &&
+        request.get(Constants.REPORTED_REASON) instanceof List) {
+      List<String> reportedReasonList = (List<String>) request.get(Constants.REPORTED_REASON);
+
+      if (reportedReasonList.contains("Others") && request.containsKey(Constants.OTHER_REASON)) {
+        String otherReason = (String) request.get(Constants.OTHER_REASON);
+        if (!StringUtils.isBlank(otherReason)) {
+          commentData.put(Constants.OTHER_REASON, otherReason);
+        }
+      }
+    }
     comment.setStatus(Status.SUSPENDED.name().toLowerCase());
     comment = commentRepository.save(comment);
     response.setResult(objectMapper.convertValue(comment, Map.class));
@@ -559,13 +651,62 @@ public class CommentServiceImpl implements CommentService {
     return response;
   }
 
+  @Override
+  public ApiResponse getCommentsLikedByUser(String courseId, String token) {
+    log.info("CommentServiceImpl:getCommentsLikedByUser::inside the method");
+    ApiResponse response = new ApiResponse();
+    response.setResponseCode(HttpStatus.OK);
+    String userId = accessTokenValidator.verifyUserToken(token);
+    if (StringUtils.isBlank(userId) || userId.equalsIgnoreCase(Constants.UNAUTHORIZED_USER)) {
+      return returnErrorMsg(Constants.INVALID_USER, HttpStatus.BAD_REQUEST, response);
+    }
+    if (StringUtils.isBlank(courseId)) {
+      return returnErrorMsg(Constants.EMPTY_COURSEID, HttpStatus.BAD_REQUEST, response);
+    }
+    UserCourseCommentsId id = new UserCourseCommentsId(userId, courseId);
+    Optional<UserCourseCommentLike> records = userCommentLikeRepository.findById(id);
+    if (records.isPresent() && !records.get().getCommentIds().isEmpty()) {
+      List<String> commentIds = records.get().getCommentIds();
+      // Convert List<String> to Map<String, Object>
+      Map<String, Object> commentIdsMap = new HashMap<>();
+      commentIdsMap.put(Constants.COMMENT_ID, commentIds);
+      // Set the result as Map<String, Object>
+      response.setResult(commentIdsMap);
+    } else {
+      // Handle case where commentIds is empty or record is not present
+      response.setResult(Collections.emptyMap());
+    }
+    return response;
+  }
+
   private String validateReportCommentPayload(Map<String, Object> request) {
     StringBuffer str = new StringBuffer();
     List<String> errList = new ArrayList<>();
 
     if (request.containsKey(Constants.COMMENT_ID) &&
     StringUtils.isBlank((String) request.get(Constants.COMMENT_ID))){
-      errList.add(Constants.COMMENT_TREE_ID);
+      errList.add(Constants.COMMENT_ID);
+    }
+    // Check if REPORTED_REASON is a list of strings
+    if (request.containsKey(Constants.REPORTED_REASON)) {
+      Object reportedReasonObj = request.get(Constants.REPORTED_REASON);
+      // Check if REPORTED_REASON is a list of strings
+      if (reportedReasonObj instanceof List) {
+        List<String> reportedReasonList = (List<String>) reportedReasonObj;
+        // Check if the list is empty
+        if (reportedReasonList.isEmpty()) {
+          errList.add(Constants.REPORTED_REASON);
+        } else if (reportedReasonList.contains("Others")) {
+          // Check if OTHER_REASON is provided
+          if (!request.containsKey(Constants.OTHER_REASON) ||
+              StringUtils.isBlank((String) request.get(Constants.OTHER_REASON))) {
+            errList.add(Constants.OTHER_REASON);
+          }
+        }
+      } else {
+        // If REPORTED_REASON is not a list, add an error
+        errList.add(Constants.REPORTED_REASON);
+      }
     }
     if (!errList.isEmpty()) {
       str.append("Failed Due To Missing Params - ").append(errList).append(".");
@@ -618,6 +759,9 @@ public class CommentServiceImpl implements CommentService {
     }
     if (StringUtils.isBlank((String) likePayload.get(Constants.USERID))) {
       errList.add(Constants.USERID);
+    }
+    if (StringUtils.isBlank((String) likePayload.get(Constants.COURSEID))) {
+      errList.add(Constants.COURSEID);
     }
     String voteType = (String) likePayload.get(Constants.FLAG);
     if (StringUtils.isBlank(voteType)) {
@@ -678,7 +822,7 @@ public class CommentServiceImpl implements CommentService {
 
           // Process profile details if present
           String profileDetails = (String) userInfo.get(Constants.PROFILE_DETAILS);
-          if (StringUtils.isNotEmpty(profileDetails)) {
+          if (StringUtils.isNotBlank(profileDetails)) {
             try {
               // Convert JSON profile details to a Map
               Map<String, Object> profileDetailsMap = objectMapper.readValue(profileDetails,
@@ -714,5 +858,6 @@ public class CommentServiceImpl implements CommentService {
       }
     return "";
   }
+
 
 }

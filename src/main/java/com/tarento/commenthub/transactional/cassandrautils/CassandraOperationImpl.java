@@ -2,6 +2,7 @@ package com.tarento.commenthub.transactional.cassandrautils;
 
 import com.datastax.driver.core.*;
 import com.datastax.driver.core.querybuilder.Clause;
+import com.datastax.driver.core.querybuilder.Delete;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
 import com.datastax.driver.core.querybuilder.Select;
 import com.datastax.driver.core.querybuilder.Select.Builder;
@@ -190,4 +191,23 @@ public class CassandraOperationImpl implements CassandraOperation {
     return getRecordsByPropertiesWithoutFiltering(keyspaceName, tableName, propertyMap, fields,
         null);
   }
+
+
+    @Override
+    public void deleteRecord(String keyspaceName, String tableName, Map<String, Object> compositeKeyMap) {
+        Delete delete = null;
+        try {
+            delete = QueryBuilder.delete().from(keyspaceName, tableName);
+            Delete.Where deleteWhere = delete.where();
+            compositeKeyMap.entrySet().stream().forEach(x -> {
+                Clause clause = QueryBuilder.eq(x.getKey(), x.getValue());
+                deleteWhere.and(clause);
+            });
+            connectionManager.getSession(keyspaceName).execute(delete);
+        } catch (Exception e) {
+            logger.error(String.format("CassandraOperationImpl: deleteRecord by composite key. %s %s %s",
+                Constants.EXCEPTION_MSG_DELETE, tableName, e.getMessage()));
+            throw e;
+        }
+    }
 }
