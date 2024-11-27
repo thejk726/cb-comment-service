@@ -172,7 +172,12 @@ public class CommentServiceImpl implements CommentService {
 
     }
     Comment commentToBeUpdated = optComment.get();
-    commentToBeUpdated.setCommentData(paylaod.get(Constants.COMMENT_DATA));
+    ObjectNode commentData = (ObjectNode) paylaod.get(Constants.COMMENT_DATA);
+    if (commentToBeUpdated.getCommentData().has(Constants.LIKE)
+        && !commentToBeUpdated.getCommentData().get(Constants.LIKE).isNull()) {
+      commentData.put(Constants.LIKE, commentToBeUpdated.getCommentData().get(Constants.LIKE));
+    }
+    commentToBeUpdated.setCommentData(commentData);
 
     Timestamp currentTime = new Timestamp(System.currentTimeMillis());
     commentToBeUpdated.setLastUpdatedDate(currentTime);
@@ -522,11 +527,6 @@ public class CommentServiceImpl implements CommentService {
     if (isUserEnriched){
       userList = fetchUsersByCommentData(comments);
     }
-    Map<String, Object> courseDetails = new HashMap<>();
-    if(commentTree.getCommentTreeData().has(Constants.ENTITY_ID) && !commentTree.getCommentTreeData().get(Constants.ENTITY_ID).isNull()){
-      String courseId = commentTree.getCommentTreeData().get(Constants.ENTITY_ID).asText();
-      courseDetails = fetchCourseDetails(courseId);
-    }
     CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
         comments, userList, taggedUsers);
     Optional.ofNullable(comments)
@@ -535,13 +535,6 @@ public class CommentServiceImpl implements CommentService {
     return resultMap;
   }
 
-  private Map<String, Object> fetchCourseDetails(String courseId) {
-    log.info("fetching course details from redis");
-    redisTemplate.opsForValue().get(courseId);
-
-    Map<String, Object> courseDetails = null;
-    return  courseDetails;
-  }
 
   @Override
   public ApiResponse listOfComments(List<String> commentIds) {
@@ -554,7 +547,10 @@ public class CommentServiceImpl implements CommentService {
     int offset = defaultOffset;
     int limit = defaultLimit;
     Sort sort = Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE);
-    List<Comment> comments = commentRepository.findByCommentIdIn(commentIds, sort);
+    List<String> statuses = Arrays.asList(Status.ACTIVE.name().toLowerCase(),
+        Status.SUSPENDED.name().toLowerCase());
+    List<Comment> comments = commentRepository.findByCommentIdInAndStatusIn(commentIds, statuses,
+        sort);
     List<Map<String, Object>> userList = new ArrayList<>();
     userList = fetchUsersByCommentData(comments);
     Set<String> uniqueTaggedUserIds = new HashSet<>();
