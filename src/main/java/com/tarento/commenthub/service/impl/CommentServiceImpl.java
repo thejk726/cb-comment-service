@@ -31,6 +31,7 @@ import com.tarento.commenthub.repository.CommentTreeRepository;
 import com.tarento.commenthub.repository.UserCommentLikeRepository;
 import com.tarento.commenthub.service.CommentService;
 import com.tarento.commenthub.service.CommentTreeService;
+import com.tarento.commenthub.service.ContentService;
 import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
 import com.tarento.commenthub.transactional.utils.ApiResponse;
 import com.tarento.commenthub.utility.Status;
@@ -103,6 +104,9 @@ public class CommentServiceImpl implements CommentService {
 
   @Autowired
   private UserCommentLikeRepository userCommentLikeRepository;
+
+  @Autowired
+  private ContentService contentService;
 
   @Override
   public ResponseDTO addFirstCommentToCreateTree(JsonNode payload) {
@@ -527,14 +531,26 @@ public class CommentServiceImpl implements CommentService {
     if (isUserEnriched){
       userList = fetchUsersByCommentData(comments);
     }
+    Map<String, Object> courseDetails = new HashMap<>();
+    if (commentTree.getCommentTreeData().has(Constants.ENTITY_ID)
+        && !commentTree.getCommentTreeData().get(Constants.ENTITY_ID).isNull()) {
+      String courseId = commentTree.getCommentTreeData().get(Constants.ENTITY_ID).asText();
+      courseDetails = fetchCourseDetails(courseId);
+
+    }
     CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
-        comments, userList, taggedUsers);
+        comments, userList, taggedUsers, courseDetails);
     Optional.ofNullable(comments)
         .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
     resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
     return resultMap;
   }
 
+  private Map<String, Object> fetchCourseDetails(String courseId) {
+    log.info("fetching course details from redis");
+    Map<String, Object> courseDetails = contentService.readContentFromCache(courseId, null);
+    return courseDetails;
+  }
 
   @Override
   public ApiResponse listOfComments(List<String> commentIds) {
