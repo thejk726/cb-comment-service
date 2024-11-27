@@ -522,12 +522,25 @@ public class CommentServiceImpl implements CommentService {
     if (isUserEnriched){
       userList = fetchUsersByCommentData(comments);
     }
+    Map<String, Object> courseDetails = new HashMap<>();
+    if(commentTree.getCommentTreeData().has(Constants.ENTITY_ID) && !commentTree.getCommentTreeData().get(Constants.ENTITY_ID).isNull()){
+      String courseId = commentTree.getCommentTreeData().get(Constants.ENTITY_ID).asText();
+      courseDetails = fetchCourseDetails(courseId);
+    }
     CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
         comments, userList, taggedUsers);
     Optional.ofNullable(comments)
         .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
     resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
     return resultMap;
+  }
+
+  private Map<String, Object> fetchCourseDetails(String courseId) {
+    log.info("fetching course details from redis");
+    redisTemplate.opsForValue().get(courseId);
+
+    Map<String, Object> courseDetails = null;
+    return  courseDetails;
   }
 
   @Override
