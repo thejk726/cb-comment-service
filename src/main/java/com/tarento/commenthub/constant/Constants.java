@@ -124,4 +124,10 @@ public class Constants {
   public static final String OTHER_REASON = "otherReasons";
   public static final String COURSEID = "courseId";
   public static final String EMPTY_COURSEID = "CourseId is missing";
+  public static final String OK = "OK";
+  public static final String RESPONSE_CODE = "responseCode";
+  public static final String RESULT = "result";
+  public static final String CONTENT = "content";
+  public static final String FETCH_RESULT_CONSTANT = ".fetchResult:";
+  public static final String URI_CONSTANT = "URI: ";
 }

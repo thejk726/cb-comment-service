@@ -26,4 +26,5 @@ public interface CommentRepository extends JpaRepository<Comment, String> {
 
   List<Comment> findByCommentIdIn(List<String> commentIds, Sort sort);
 
+  List<Comment> findByCommentIdInAndStatusIn(List<String> commentIds, List<String> statuses, Sort sort);
 }

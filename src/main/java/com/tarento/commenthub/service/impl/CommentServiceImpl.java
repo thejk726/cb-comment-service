@@ -31,6 +31,7 @@ import com.tarento.commenthub.repository.CommentTreeRepository;
 import com.tarento.commenthub.repository.UserCommentLikeRepository;
 import com.tarento.commenthub.service.CommentService;
 import com.tarento.commenthub.service.CommentTreeService;
+import com.tarento.commenthub.service.ContentService;
 import com.tarento.commenthub.transactional.cassandrautils.CassandraOperation;
 import com.tarento.commenthub.transactional.utils.ApiResponse;
 import com.tarento.commenthub.utility.Status;
@@ -104,6 +105,9 @@ public class CommentServiceImpl implements CommentService {
   @Autowired
   private UserCommentLikeRepository userCommentLikeRepository;
 
+  @Autowired
+  private ContentService contentService;
+
   @Override
   public ResponseDTO addFirstCommentToCreateTree(JsonNode payload) {
     validatePayload(Constants.ADD_FIRST_COMMENT_PAYLOAD_VALIDATION_FILE, payload);
@@ -172,7 +176,12 @@ public class CommentServiceImpl implements CommentService {
 
     }
     Comment commentToBeUpdated = optComment.get();
-    commentToBeUpdated.setCommentData(paylaod.get(Constants.COMMENT_DATA));
+    ObjectNode commentData = (ObjectNode) paylaod.get(Constants.COMMENT_DATA);
+    if (commentToBeUpdated.getCommentData().has(Constants.LIKE)
+        && !commentToBeUpdated.getCommentData().get(Constants.LIKE).isNull()) {
+      commentData.put(Constants.LIKE, commentToBeUpdated.getCommentData().get(Constants.LIKE));
+    }
+    commentToBeUpdated.setCommentData(commentData);
 
     Timestamp currentTime = new Timestamp(System.currentTimeMillis());
     commentToBeUpdated.setLastUpdatedDate(currentTime);
@@ -522,12 +531,25 @@ public class CommentServiceImpl implements CommentService {
     if (isUserEnriched){
       userList = fetchUsersByCommentData(comments);
     }
+    Map<String, Object> courseDetails = new HashMap<>();
+    if (commentTree.getCommentTreeData().has(Constants.ENTITY_ID)
+        && !commentTree.getCommentTreeData().get(Constants.ENTITY_ID).isNull()) {
+      String courseId = commentTree.getCommentTreeData().get(Constants.ENTITY_ID).asText();
+      courseDetails = fetchCourseDetails(courseId);
+
+    }
     CommentsResoponseDTO commentsResoponseDTO = new CommentsResoponseDTO(commentTree,
-        comments, userList, taggedUsers);
+        comments, userList, taggedUsers, courseDetails);
     Optional.ofNullable(comments)
         .ifPresent(commentsList -> commentsResoponseDTO.setCommentCount(childNodeList.size()));
     resultMap = objectMapper.convertValue(commentsResoponseDTO, Map.class);
     return resultMap;
+  }
+
+  private Map<String, Object> fetchCourseDetails(String courseId) {
+    log.info("fetching course details from redis");
+    Map<String, Object> courseDetails = contentService.readContentFromCache(courseId, null);
+    return courseDetails;
   }
 
   @Override
@@ -541,7 +563,10 @@ public class CommentServiceImpl implements CommentService {
     int offset = defaultOffset;
     int limit = defaultLimit;
     Sort sort = Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE);
-    List<Comment> comments = commentRepository.findByCommentIdIn(commentIds, sort);
+    List<String> statuses = Arrays.asList(Status.ACTIVE.name().toLowerCase(),
+        Status.SUSPENDED.name().toLowerCase());
+    List<Comment> comments = commentRepository.findByCommentIdInAndStatusIn(commentIds, statuses,
+        sort);
     List<Map<String, Object>> userList = new ArrayList<>();
     userList = fetchUsersByCommentData(comments);
     Set<String> uniqueTaggedUserIds = new HashSet<>();
