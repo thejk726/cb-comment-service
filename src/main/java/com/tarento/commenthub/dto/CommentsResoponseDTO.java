@@ -20,7 +20,7 @@ public class CommentsResoponseDTO {
 
   private List<Comment> comments;
 
-  private List<Map<String, Object>> users;
+  private List<Object> users;
 
   private int commentCount;
 
@@ -28,33 +28,33 @@ public class CommentsResoponseDTO {
 
   private Map<String, Object> courseDetails;
 
-  public CommentsResoponseDTO(CommentTree commentTree, List<Comment> comments, List<Map<String, Object>> userList) {
+  public CommentsResoponseDTO(CommentTree commentTree, List<Comment> comments, List<Object> userList) {
     this.commentTree = commentTree;
     this.comments = comments;
     this.users = userList;
   }
 
 
-  public CommentsResoponseDTO(List<Comment> comments, List<Map<String, Object>> userList) {
+  public CommentsResoponseDTO(List<Comment> comments, List<Object> userList) {
     this.comments = comments;
     this.users = userList;
   }
 
-  public CommentsResoponseDTO(CommentTree commentTree, List<Comment> comments, List<Map<String, Object>> userList, List<Object> taggedUsers) {
+  public CommentsResoponseDTO(CommentTree commentTree, List<Comment> comments, List<Object> userList, List<Object> taggedUsers) {
     this.commentTree = commentTree;
     this.comments = comments;
     this.users = userList;
     this.taggedUsers=taggedUsers;
   }
 
-  public CommentsResoponseDTO(List<Comment> comments, List<Map<String, Object>> userList, List<Object> taggedUsers) {
+  public CommentsResoponseDTO(List<Comment> comments, List<Object> userList, List<Object> taggedUsers) {
     this.comments = comments;
     this.users = userList;
     this.taggedUsers=taggedUsers;
   }
 
   public CommentsResoponseDTO(CommentTree commentTree, List<Comment> comments,
-      List<Map<String, Object>> userList, List<Object> taggedUsers,
+      List<Object> userList, List<Object> taggedUsers,
       Map<String, Object> courseDetails) {
     this.commentTree = commentTree;
     this.comments = comments;

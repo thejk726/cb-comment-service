@@ -210,12 +210,24 @@ public class CommentServiceImpl implements CommentService {
       // Fetch from db and add fetched comments into redis
       comments = commentRepository.findByCommentIdInAndStatus(childNodeList,
           Status.ACTIVE.name().toLowerCase());
-      List<Map<String, Object>> userList = new ArrayList<>();
-      userList = fetchUsersByCommentData(comments);
+      List<Object> userList = new ArrayList<>();
+
       Set<String> uniqueTaggedUserIds = new HashSet<>();
       Set<String> uniqueTaggedUserIdWithoutPrefixs = new HashSet<>();
+      Set<String> owneruserIds = new HashSet<>();
+      Set<String> owneruserIdWithoutPrefixs = new HashSet<>();
 // Iterate through each comment to extract tagged users
       comments.forEach(comment -> {
+        JsonNode commentData = comment.getCommentData();
+        if (commentData != null
+            && commentData.has(Constants.COMMENT_SOURCE)
+            && commentData.get(Constants.COMMENT_SOURCE).has(Constants.USER_ID)) {
+          String userId = commentData.get(Constants.COMMENT_SOURCE).get(Constants.USER_ID).asText();
+          if (userId != null && !userId.isEmpty()) {
+            owneruserIds.add(Constants.USER_PREFIX + userId);
+            owneruserIdWithoutPrefixs.add(userId);
+          }
+        }
         JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
 
         // Check if taggedUsersNode exists and is an array
@@ -229,6 +241,12 @@ public class CommentServiceImpl implements CommentService {
           });
         }
       });
+      List<String> commentedUserListWithoutPrefix = new ArrayList<>(owneruserIds);
+      userList = fetchUser.fetchDataForKeys(commentedUserListWithoutPrefix);
+      if (userList == null || userList.isEmpty()) {
+        // Handle the case where taggedUsers is empty or null
+        userList = fetchUser.fetchUserFromprimary(commentedUserListWithoutPrefix);
+      }
       List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
       List<String> taggedUserListWithoutPrefix = new ArrayList<>(uniqueTaggedUserIdWithoutPrefixs);
       List<Object> taggedUsers = fetchUser.fetchDataForKeys(taggedUserList);
@@ -502,24 +520,40 @@ public class CommentServiceImpl implements CommentService {
         Sort.by(Sort.Direction.DESC, Constants.CREATED_DATE));
     List<Comment> comments = commentRepository.findByCommentIdIn(childNodeList, pageable)
         .getContent();
-    List<Map<String, Object>> userList = new ArrayList<>();
+    List<Object> userList = new ArrayList<>();
     Set<String> uniqueTaggedUserIds = new HashSet<>();
     Set<String> uniqueTaggedUserIdWithoutPrefixs = new HashSet<>();
+    Set<String> owneruserIds = new HashSet<>();
+    Set<String> owneruserIdWithoutPrefixs = new HashSet<>();
 // Iterate through each comment to extract tagged users
     comments.forEach(comment -> {
+      JsonNode commentData = comment.getCommentData();
+      if (commentData != null
+          && commentData.has(Constants.COMMENT_SOURCE)
+          && commentData.get(Constants.COMMENT_SOURCE).has(Constants.USER_ID)) {
+        String userId = commentData.get(Constants.COMMENT_SOURCE).get(Constants.USER_ID).asText();
+        if (userId != null && !userId.isEmpty()) {
+          owneruserIds.add(Constants.USER_PREFIX + userId);
+          owneruserIdWithoutPrefixs.add(userId);
+        }
+      }
       JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
-
       // Check if taggedUsersNode exists and is an array
       if (taggedUsersNode != null && taggedUsersNode.isArray()) {
         // Add each tagged user ID to the set to maintain uniqueness
         taggedUsersNode.forEach(taggedUser -> {
           uniqueTaggedUserIds.add(Constants.USER_PREFIX + taggedUser.asText());
-
           // Add the tagged user ID without the prefix to uniqueTaggedUserIdWithoutPrefixs
           uniqueTaggedUserIdWithoutPrefixs.add(taggedUser.asText());
         });
       }
     });
+    List<String> commentedUserListWithoutPrefix = new ArrayList<>(owneruserIds);
+    userList = fetchUser.fetchDataForKeys(commentedUserListWithoutPrefix);
+    if (userList == null || userList.isEmpty()) {
+      // Handle the case where taggedUsers is empty or null
+      userList = fetchUser.fetchUserFromprimary(commentedUserListWithoutPrefix);
+    }
     List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
     List<String> taggedUserListWithoutPrefix = new ArrayList<>(uniqueTaggedUserIdWithoutPrefixs);
     List<Object> taggedUsers = fetchUser.fetchDataForKeys(taggedUserList);
@@ -528,9 +562,6 @@ public class CommentServiceImpl implements CommentService {
       taggedUsers = fetchUser.fetchUserFromprimary(taggedUserListWithoutPrefix);
     }
     // Collect unique IDs
-    if (isUserEnriched){
-      userList = fetchUsersByCommentData(comments);
-    }
     Map<String, Object> courseDetails = new HashMap<>();
     if (commentTree.getCommentTreeData().has(Constants.ENTITY_ID)
         && !commentTree.getCommentTreeData().get(Constants.ENTITY_ID).isNull()) {
@@ -567,12 +598,24 @@ public class CommentServiceImpl implements CommentService {
         Status.SUSPENDED.name().toLowerCase());
     List<Comment> comments = commentRepository.findByCommentIdInAndStatusIn(commentIds, statuses,
         sort);
-    List<Map<String, Object>> userList = new ArrayList<>();
-    userList = fetchUsersByCommentData(comments);
+    List<Object> userList = new ArrayList<>();
     Set<String> uniqueTaggedUserIds = new HashSet<>();
     Set<String> uniqueTaggedUserIdWithoutPrefixs = new HashSet<>();
+
+    Set<String> owneruserIds = new HashSet<>();
+    Set<String> owneruserIdWithoutPrefixs = new HashSet<>();
 // Iterate through each comment to extract tagged users
     comments.forEach(comment -> {
+      JsonNode commentData = comment.getCommentData();
+      if (commentData != null
+          && commentData.has(Constants.COMMENT_SOURCE)
+          && commentData.get(Constants.COMMENT_SOURCE).has(Constants.USER_ID)) {
+        String userId = commentData.get(Constants.COMMENT_SOURCE).get(Constants.USER_ID).asText();
+        if (userId != null && !userId.isEmpty()) {
+          owneruserIds.add(Constants.USER_PREFIX + userId);
+          owneruserIdWithoutPrefixs.add(userId);
+        }
+      }
       JsonNode taggedUsersNode = comment.getCommentData().get(Constants.TAGGED_USERS);
 
       // Check if taggedUsersNode exists and is an array
@@ -586,6 +629,12 @@ public class CommentServiceImpl implements CommentService {
         });
       }
     });
+    List<String> commentedUserListWithoutPrefix = new ArrayList<>(owneruserIds);
+    userList = fetchUser.fetchDataForKeys(commentedUserListWithoutPrefix);
+    if (userList == null || userList.isEmpty()) {
+      // Handle the case where taggedUsers is empty or null
+      userList = fetchUser.fetchUserFromprimary(commentedUserListWithoutPrefix);
+    }
     List<String> taggedUserList = new ArrayList<>(uniqueTaggedUserIds);
     List<String> taggedUserListWithoutPrefix = new ArrayList<>(uniqueTaggedUserIdWithoutPrefixs);
     List<Object> taggedUsers = fetchUser.fetchDataForKeys(taggedUserList);
